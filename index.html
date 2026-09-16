@@ -285,9 +285,15 @@ function renderDaily(){
     return r.status==='work' && workedMinutesRec(r)>0;
   });
   const pendingList=ranked.filter(e=>recFor(e.id).status==='pending');
+  // กลุ่มคนไม่มาทำงาน: คนลา (แจ้งลา) ต้องอยู่เหนือคนหยุดงาน/ขาดงานเสมอ
   const absent=ranked.filter(e=>{
     const r=recFor(e.id);
     return r.status==='off'||r.status==='leave';
+  }).sort((a,b)=>{
+    const ra=recFor(a.id), rb=recFor(b.id);
+    const pa=ra.status==='leave'?0:1;
+    const pb=rb.status==='leave'?0:1;
+    return pa-pb || (a.sort_seed||999)-(b.sort_seed||999);
   });
 
   let rankNo=0;
