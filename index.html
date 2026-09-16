@@ -40,6 +40,7 @@ header{background:linear-gradient(135deg,#081d32,#103e67);color:#fff;padding:14p
   <div class="note">เงินเบิกสะสมรีเซ็ตเป็น 0 ในวันที่ 10 และ 25 ของทุกเดือน • ข้อมูลเก็บในเครื่องนี้ด้วย Local Storage • กด “บันทึก” ทุกครั้งหลังแก้ข้อมูล</div>
 </div>
 <div class="footerbar"><button class="save" id="saveBtn">บันทึก</button><button class="export" id="exportBtn">ส่งออกภาพ</button><button class="reset" id="clearBtn">ล้างข้อมูลวันนี้</button></div>
+<script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
 <script>
 const employees=[
 ['เชียร์','01.jpg'],['ต้น','02.jpg'],['แหล่','03.jpg'],['วัน','04.jpg'],['ลุ่ง','05.jpg'],['บาส','06.jpg'],['โกเพียว','07.jpg'],['อองแง','08.jpg'],['โกนุย','09.jpg'],['พิลิโป','10.jpg'],['โจวานี่','11.jpg'],['เพโต','12.jpg'],['อายมาโด','13.jpg'],['คินวิน','14.jpg'],['วินนาย','15.jpg'],['ยานซู','16.jpg'],['กัลโร','17.jpg'],['คิม','18.jpg']
@@ -58,7 +59,24 @@ saveBtn.onclick=()=>{syncFromUI();const d=date.value;maybeResetTotals(d);roster.
 sortBtn.onclick=()=>{syncFromUI();roster.sort((a,b)=>b.workDays-a.workDays||a.offDays-b.offDays||a.id-b.id);localStorage.setItem('sft-roster-v1',JSON.stringify(roster));render()}
 clearBtn.onclick=()=>{roster.forEach(e=>{e.status='หยุดงาน';e.time='';e.advance=0});render()}
 seedBtn.onclick=()=>{date.value='2026-09-01';roster.forEach(e=>{e.status='หยุดงาน';e.time='';e.advance=0});const work13=['ต้น','โจวานี่','เพโต','อายมาโด','โกนุย'];const work8=['วินนาย','คินวิน','ยานซู','ลุ่ง','วัน','พิลิโป','แหล่','อองแง'];roster.forEach(e=>{if(work13.includes(e.name)){e.status='ทำงาน';e.time='13:00-18:00'}if(work8.includes(e.name)){e.status='ทำงาน';e.time='08:00-17:00'}});[['บาส',200],['เชียร์',300],['พิลิโป',300],['วินนาย',500]].forEach(([n,v])=>{const e=roster.find(x=>x.name===n);if(e)e.advance=v});render()}
-exportBtn.onclick=()=>{window.print()}
+exportBtn.onclick=async()=>{
+syncFromUI();updateSummary();renderShiftOnly();
+const btn=exportBtn,oldText=btn.textContent;btn.disabled=true;btn.textContent='กำลังสร้างรูป...';
+try{
+if(typeof html2canvas!=='function')throw new Error('โหลดระบบสร้างรูปไม่สำเร็จ');
+const canvas=await html2canvas(document.querySelector('.wrap'),{scale:2,useCORS:true,backgroundColor:'#eef3f7',logging:false});
+const blob=await new Promise(r=>canvas.toBlob(r,'image/png',1));
+if(!blob)throw new Error('สร้างไฟล์รูปไม่สำเร็จ');
+const d=(date.value||new Date().toISOString().slice(0,10)).replaceAll('-','');
+const file=new File([blob],`SFT_Attendance_${d}.png`,{type:'image/png'});
+if(navigator.canShare&&navigator.canShare({files:[file]})&&navigator.share){
+await navigator.share({files:[file],title:'SF&T สรุปการทำงานพนักงาน'});
+}else{
+const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=file.name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),3000);
+}
+}catch(err){if(err&&err.name!=='AbortError')alert('ส่งออกรูปไม่สำเร็จ: '+(err.message||err))}
+finally{btn.disabled=false;btn.textContent=oldText}
+}
 render();
 </script>
 </body></html>
