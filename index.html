@@ -210,7 +210,35 @@ function restoreLastWorkDate(){
   const saved=localStorage.getItem(LAST_WORK_DATE_KEY);
   if(saved)el.value=saved;
 }
-async function loadDaily(){rememberWorkDate();sync('กำลังโหลด…');try{employees=await api('sft_attendance_employees?select=*&is_active=eq.true&order=sort_seed.asc');const d=$('#workDate').value;employees=employees.filter(e=>!e.created_at||String(e.created_at).slice(0,10)<=d);await loadStats();records=await api('sft_attendance_records?select=*&work_date=eq.'+d);renderDaily();renderManage();sync('ซิงก์แล้ว ✓')}catch(e){console.error(e);sync('เชื่อมข้อมูลไม่สำเร็จ',false)}}
+async function loadDaily(){
+  rememberWorkDate();
+  sync('กำลังโหลด…');
+  try{
+    const d=$('#workDate').value;
+
+    // โหลดพนักงานที่ยังใช้งานอยู่ทั้งหมดก่อน ห้ามตัดทิ้งจาก created_at อย่างเดียว
+    // เพราะพนักงานเดิมบางคนอาจถูกเพิ่มกลับเข้าตารางใหม่ ทำให้ created_at ใหม่กว่า
+    // ประวัติการลงเวลาจริงต้องเป็นหลักฐานว่าพนักงานคนนั้นมีอยู่แล้วในวันย้อนหลัง
+    const allActive=await api('sft_attendance_employees?select=*&is_active=eq.true&order=sort_seed.asc');
+    const historical=await api(`sft_attendance_records?select=employee_id&work_date=lte.${d}`);
+    const existedByDate=new Set((historical||[]).map(r=>Number(r.employee_id)));
+
+    employees=(allActive||[]).filter(e=>{
+      const created=!e.created_at || String(e.created_at).slice(0,10)<=d;
+      const hadHistory=existedByDate.has(Number(e.id));
+      return created || hadHistory;
+    });
+
+    await loadStats();
+    records=await api('sft_attendance_records?select=*&work_date=eq.'+d);
+    renderDaily();
+    renderManage();
+    sync('ซิงก์แล้ว ✓');
+  }catch(e){
+    console.error(e);
+    sync('เชื่อมข้อมูลไม่สำเร็จ',false);
+  }
+}
 
 function isFemaleEmployee(e){
   const n=((e.name||'')+' '+(e.full_name||'')).toLowerCase();
