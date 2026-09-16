@@ -16,6 +16,10 @@ main{padding:12px;max-width:1180px;margin:auto}.panel{background:#fff;border-rad
 <style id="v4-manual-save-style">
   .status-pending{border-left-color:#94a3b8!important}
   .status-pending .shift{background:#64748b!important;color:#fff!important}
+  .status-photo-wait{border-left-color:#38bdf8!important}
+  .status-photo-wait .shift{background:#0ea5e9!important;color:#fff!important}
+  .status-photo-wait{border-left-color:#38bdf8!important}
+  .status-photo-wait .shift{background:#0ea5e9!important;color:#fff!important}
   .save-one{width:100%;margin-top:10px;background:#0f3f73!important;color:#fff!important;font-weight:800!important}
   .save-state{font-size:14px;font-weight:700;color:#64748b;margin-top:8px}
   .save-state.dirty{color:#b45309}
@@ -90,7 +94,7 @@ function fmtMoney(n){return Number(n||0).toLocaleString('th-TH',{maximumFraction
 function formatHalf(n){const v=Math.round((Number(n)||0)*2)/2;return Number.isInteger(v)?String(v):v.toFixed(1)}
 function recFor(id){
   const found=records.find(r=>r.employee_id===id);
-  const r=found||{
+  const r=found?{...found}:{
     employee_id:id,
     status:'pending',
     start_time:'',
@@ -100,6 +104,8 @@ function recFor(id){
     advance_amount:0,
     note:''
   };
+  // เก็บสถานะรอรูปด้วย status=pending + note marker เพื่อไม่กระทบโครงสร้างฐานข้อมูลเดิม
+  if(r.status==='pending' && String(r.note||'')==='__PHOTO_WAIT__') r.status='photo_wait';
   return normalizePunches(r);
 }
 function attendanceCycleStart(dateStr){
@@ -219,20 +225,21 @@ function rankEmployees(){
     const ra=recFor(a.id), rb=recFor(b.id);
 
     const group = (r)=>{
-      // ลำดับประจำวัน: ทำงาน > รอกรอก > ลา > ขาด/หยุดงาน
+      // ลำดับประจำวัน: ทำงาน > รอรูปถ่ายยืนยัน > รอกรอก > ลา > ขาด/หยุดงาน
       // คนขาดงานโดยไม่แจ้ง (สถานะ off) ต้องอยู่ลำดับสุดท้ายเสมอ
       if(r.status==='work' && workedMinutesRec(r)>0) return 0;
-      if(r.status==='pending') return 1;
-      if(r.status==='leave') return 2;
-      if(r.status==='off') return 3;
-      return 3;
+      if(r.status==='photo_wait') return 1;
+      if(r.status==='pending') return 2;
+      if(r.status==='leave') return 3;
+      if(r.status==='off') return 4;
+      return 4;
     };
 
     const ga=group(ra), gb=group(rb);
     if(ga!==gb) return ga-gb;
 
     // คนที่ยังรอกรอก ไม่ต้องรันอันดับ ให้คงลำดับตั้งต้น
-    if(ga===1){
+    if(ga===1 || ga===2){
       return (a.sort_seed||999)-(b.sort_seed||999);
     }
 
@@ -270,10 +277,12 @@ function renderDaily(){
   const work=records.filter(r=>r.status==='work').length;
   const off=records.filter(r=>r.status==='off').length;
   const leave=records.filter(r=>r.status==='leave').length;
-  const pending=Math.max(0,employees.length-work-off-leave);
+  const photoWait=employees.filter(e=>recFor(e.id).status==='photo_wait').length;
+  const pending=Math.max(0,employees.length-work-off-leave-photoWait);
   const adv=records.reduce((sum,r)=>sum+Number(r.advance_amount||0),0);
   $('#summary').innerHTML=
     `<div class="metric"><span>ทำงานวันนี้</span><b>${work}</b></div>`+
+    `<div class="metric"><span>รอรูปถ่ายยืนยัน</span><b>${photoWait}</b></div>`+
     `<div class="metric"><span>รอกรอกข้อมูล</span><b>${pending}</b></div>`+
     `<div class="metric"><span>หยุดงาน</span><b>${off}</b></div>`+
     `<div class="metric"><span>ลา</span><b>${leave}</b></div>`+
@@ -284,20 +293,19 @@ function renderDaily(){
 
     return r.status==='work' && workedMinutesRec(r)>0;
   });
+  const photoWaitList=ranked.filter(e=>recFor(e.id).status==='photo_wait');
   const pendingList=ranked.filter(e=>recFor(e.id).status==='pending');
-  // กลุ่มคนไม่มาทำงาน: คนลา (แจ้งลา) ต้องอยู่เหนือคนหยุดงาน/ขาดงานเสมอ
   const absent=ranked.filter(e=>{
     const r=recFor(e.id);
     return r.status==='off'||r.status==='leave';
-  }).sort((a,b)=>{
-    const ra=recFor(a.id), rb=recFor(b.id);
-    const pa=ra.status==='leave'?0:1;
-    const pb=rb.status==='leave'?0:1;
-    return pa-pb || (a.sort_seed||999)-(b.sort_seed||999);
   });
 
   let rankNo=0;
   let html='';
+  if(photoWaitList.length){
+    html+=`<div class="group-title pending-group">📷 รอรูปถ่ายยืนยันการทำงาน • ยังไม่ลงเวลา</div>`;
+    html+=photoWaitList.map(e=>card(e,-1)).join('');
+  }
   if(pendingList.length){
     html+=`<div class="group-title pending-group">⏳ รอกรอกข้อมูล • อยู่บนสุด • ยังไม่จัดอันดับ</div>`;
     html+=pendingList.map(e=>card(e,-1)).join('');
@@ -363,10 +371,11 @@ function card(e,i){
   const r=recFor(e.id);
   const st=stats[e.id]||{work:0,off:0,leave:0,advance:0,totalMinutes:0,otMinutes:0,streak:0};
   const isPending=r.status==='pending';
+  const isPhotoWait=r.status==='photo_wait';
   const afternoonOnly=(!r.start_time&&!r.morning_out&&!!r.afternoon_in);
-  const cls=r.status==='off'?'status-off':r.status==='leave'?'status-leave':isPending?'status-pending':'status-work';
-  const shift=isPending?'รอกรอกข้อมูล':r.status==='work'?time4Text(r):r.status==='off'?'หยุดงาน':'ลา';
-  const rankText=isPending?'–':rankMedal(i+1);
+  const cls=r.status==='off'?'status-off':r.status==='leave'?'status-leave':isPhotoWait?'status-photo-wait':isPending?'status-pending':'status-work';
+  const shift=isPhotoWait?'รอรูปถ่ายยืนยันการทำงานวันนี้':isPending?'รอกรอกข้อมูล':r.status==='work'?time4Text(r):r.status==='off'?'หยุดงาน':'ลา';
+  const rankText=(isPending||isPhotoWait)?'–':rankMedal(i+1);
   return `<article class="emp ${cls}" data-id="${e.id}">
     <div class="emp-top">
       <img src="${(e.photo_url&&EMBEDDED_PHOTOS[e.photo_url])||e.photo_url||''}" onerror="this.src='data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%2284%22 height=%2296%22%3E%3Crect width=%22100%25%22 height=%22100%25%22 fill=%22%23dbe3ea%22/%3E%3C/svg%3E'">
@@ -388,20 +397,21 @@ function card(e,i){
       <div class="field"><label>สถานะ</label>
         <select class="status">
           <option value="pending" ${isPending?'selected':''}>รอกรอกข้อมูล</option>
+          <option value="photo_wait" ${isPhotoWait?'selected':''}>📷 รอรูปถ่ายยืนยันการทำงาน</option>
           <option value="work" ${r.status==='work'?'selected':''}>ทำงาน</option>
           <option value="off" ${r.status==='off'?'selected':''}>หยุดงาน</option>
           <option value="leave" ${r.status==='leave'?'selected':''}>ลา</option>
         </select>
       </div>
       <div class="field"><label>เงินเบิกวันนี้</label><input class="advance" type="number" min="0" step="1" value="${Number(r.advance_amount||0)}"></div>
-      <div class="field"><label>เข้าเช้า</label><select class="start" ${afternoonOnly?'disabled':''}>${morningStartOptions(isPending ? '08:00' : r.start_time)}</select></div>
-      <div class="field"><label>ออกช่วงเช้า</label><select class="morning-out" ${afternoonOnly?'disabled':''}>${morningOutOptions(isPending ? '12:00' : r.morning_out)}</select></div>
-      <div class="field"><label>เข้าบ่าย</label><select class="afternoon-in">${afternoonInOptions(isPending ? '13:00' : r.afternoon_in)}</select></div>
-      <div class="field"><label>ออกเย็น</label><select class="end">${eveningOutOptions(isPending ? '17:00' : r.end_time)}</select></div>
-      <div class="field"><label>เวลาคิดจริง</label><div><b>${isPending?'ยังไม่คิดเวลา':dayWorkText(r)}</b></div></div>
+      <div class="field"><label>เข้าเช้า</label><select class="start" ${afternoonOnly?'disabled':''}>${morningStartOptions((isPending||isPhotoWait) ? '' : r.start_time)}</select></div>
+      <div class="field"><label>ออกช่วงเช้า</label><select class="morning-out" ${afternoonOnly?'disabled':''}>${morningOutOptions((isPending||isPhotoWait) ? '' : r.morning_out)}</select></div>
+      <div class="field"><label>เข้าบ่าย</label><select class="afternoon-in">${afternoonInOptions((isPending||isPhotoWait) ? '' : r.afternoon_in)}</select></div>
+      <div class="field"><label>ออกเย็น</label><select class="end">${eveningOutOptions((isPending||isPhotoWait) ? '' : r.end_time)}</select></div>
+      <div class="field"><label>เวลาคิดจริง</label><div><b>${(isPending||isPhotoWait)?'ยังไม่ลงเวลา':dayWorkText(r)}</b></div></div>
     </div>
-    <button type="button" class="btn save-one" data-id="${e.id}">💾 บันทึกคนนี้</button>
-    <div class="save-state ${isPending?'':'saved'}">${isPending?'รอกรอกข้อมูล':'บันทึกแล้ว ✓'}</div>
+    <div class="actions"><button type="button" class="btn save-one" data-id="${e.id}">💾 บันทึกคนนี้</button><button type="button" class="btn soft reset-one" data-id="${e.id}">↺ รีเซ็ตคนนี้</button></div>
+    <div class="save-state ${isPending?'':'saved'}">${isPhotoWait?'รอรูปถ่ายยืนยัน':isPending?'รอกรอกข้อมูล':'บันทึกแล้ว ✓'}</div>
   </article>`;
 }
 
@@ -489,7 +499,7 @@ function bindDailyCards(){
       mo.disabled=afternoonOnly;
       if(afternoonOnly) mo.value='';
 
-      const disabled=status.value==='off'||status.value==='leave'||status.value==='pending';
+      const disabled=status.value==='off'||status.value==='leave'||status.value==='pending'||status.value==='photo_wait';
       [start,mo,ai,el.querySelector('.end')].forEach(x=>{
         if(x) x.disabled=disabled || (afternoonOnly&&(x===start||x===mo));
       });
@@ -511,13 +521,15 @@ function bindDailyCards(){
 
     const btn=el.querySelector('.save-one');
     btn.addEventListener('click',()=>saveOneEmployee(el,btn));
+    const resetBtn=el.querySelector('.reset-one');
+    if(resetBtn) resetBtn.addEventListener('click',()=>resetOneEmployee(el,resetBtn));
   });
 }
 
 async function saveOneEmployee(el,btn){
   const r=readCardDraft(el);
-  if(r.status==='pending'){
-    alert('กรุณาเลือกสถานะ ทำงาน / หยุดงาน / ลา ก่อนบันทึก');
+  if(r.status==='pending' && Number(r.advance_amount||0)<=0){
+    alert('กรุณาเลือกสถานะ หรือกรอกเงินเบิกก่อนบันทึก');
     return;
   }
 
@@ -526,7 +538,7 @@ async function saveOneEmployee(el,btn){
     return;
   }
 
-  if(r.status==='off'||r.status==='leave'){
+  if(r.status==='off'||r.status==='leave'||r.status==='pending'||r.status==='photo_wait'){
     r.start_time=''; r.morning_out=''; r.afternoon_in=''; r.end_time='';
   }
 
@@ -536,13 +548,13 @@ async function saveOneEmployee(el,btn){
     employee_id:r.employee_id,
     work_date:d,
     site,
-    status:r.status,
+    status:(r.status==='photo_wait'?'pending':r.status),
     start_time:r.status==='work'?(r.start_time||null):null,
     morning_out:r.status==='work'?(r.morning_out||null):null,
     afternoon_in:r.status==='work'?(r.afternoon_in||null):null,
     end_time:r.status==='work'?(r.end_time||null):null,
     advance_amount:Number(r.advance_amount||0),
-    note:r.note||''
+    note:r.status==='photo_wait'?'__PHOTO_WAIT__':(r.note||'')
   };
 
   const oldText=btn.textContent;
@@ -568,6 +580,19 @@ async function saveOneEmployee(el,btn){
     sync('บันทึกไม่สำเร็จ',false);
     alert('บันทึกไม่สำเร็จ ข้อมูลในช่องยังไม่ถูกส่ง กรุณาลองอีกครั้ง');
   }
+}
+
+async function resetOneEmployee(el,btn){
+  const employeeId=Number(el.dataset.id);
+  const d=$('#workDate').value;
+  const site=$('#site').value.trim();
+  if(!confirm('รีเซ็ตข้อมูลของคนนี้เฉพาะวันนี้กลับเป็น “รอกรอกข้อมูล” ใช่หรือไม่?')) return;
+  const old=btn.textContent; btn.disabled=true; btn.textContent='กำลังรีเซ็ต…';
+  try{
+    const payload={employee_id:employeeId,work_date:d,site,status:'pending',start_time:null,morning_out:null,afternoon_in:null,end_time:null,advance_amount:0,note:''};
+    await api('sft_attendance_records?on_conflict=employee_id,work_date',{method:'POST',headers:{'Prefer':'resolution=merge-duplicates,return=minimal'},body:JSON.stringify([payload])});
+    await loadDaily(); sync('รีเซ็ตแล้ว ✓');
+  }catch(err){console.error(err);btn.disabled=false;btn.textContent=old;sync('รีเซ็ตไม่สำเร็จ',false);alert('รีเซ็ตไม่สำเร็จ กรุณาลองอีกครั้ง');}
 }
 
 async function saveAllData(){
@@ -600,7 +625,7 @@ async function saveAllData(){
 }
 $('#saveAll').addEventListener('click',()=>alert('เวอร์ชันนี้ให้กด “บันทึกคนนี้” ทีละคน เพื่อป้องกันข้อมูลผิดพลาด'));
 function thaiDateLong(dateStr){const d=new Date(dateStr+'T00:00:00');return d.toLocaleDateString('th-TH',{day:'2-digit',month:'2-digit',year:'numeric'})}
-function exportShiftColor(r){if(r.status==='pending')return '#64748b';if(r.status==='off')return '#e50914';if(r.status==='leave')return '#d9a700';const e=(r.end_time||'17:00').slice(0,5);return e==='17:00'?'#139c43':e==='18:00'?'#48a9df':e==='19:00'?'#0b82ec':e==='20:00'?'#7d45b5':e==='21:00'?'#ef8b13':'#c62828'}
+function exportShiftColor(r){if(r.status==='photo_wait')return '#0ea5e9';if(r.status==='pending')return '#64748b';if(r.status==='off')return '#e50914';if(r.status==='leave')return '#d9a700';const e=(r.end_time||'17:00').slice(0,5);return e==='17:00'?'#139c43':e==='18:00'?'#48a9df':e==='19:00'?'#0b82ec':e==='20:00'?'#7d45b5':e==='21:00'?'#ef8b13':'#c62828'}
 function roundRect(ctx,x,y,w,h,r,fill,stroke){ctx.beginPath();ctx.roundRect(x,y,w,h,r);if(fill){ctx.fillStyle=fill;ctx.fill()}if(stroke){ctx.strokeStyle=stroke;ctx.lineWidth=2;ctx.stroke()}}
 function fitText(ctx,text,maxW,startSize,minSize=16,weight='700'){let size=startSize;do{ctx.font=`${weight} ${size}px -apple-system,BlinkMacSystemFont,"Segoe UI",Tahoma,sans-serif`;if(ctx.measureText(text).width<=maxW)break;size-=1}while(size>minSize);return size}
 function loadCanvasImage(src){return new Promise(resolve=>{if(!src)return resolve(null);const i=new Image();i.onload=()=>resolve(i);i.onerror=()=>resolve(null);i.src=src})}
@@ -744,6 +769,7 @@ async function exportDailyImage(){
   text(`${dd}/${mm}/${buddhist}`,1715,98,38,900,'#111','center');
 
   const work=ranked.filter(e=>recFor(e.id).status==='work').length;
+  const photoWait=ranked.filter(e=>recFor(e.id).status==='photo_wait').length;
   const pending=ranked.filter(e=>recFor(e.id).status==='pending').length;
   const off=ranked.filter(e=>recFor(e.id).status==='off').length;
   const leave=ranked.filter(e=>recFor(e.id).status==='leave').length;
@@ -752,7 +778,7 @@ async function exportDailyImage(){
   text('สถานะงาน : ติดตั้งโครงสร้างเหล็ก',30,173,22,800,'#16324f');
 
   roundRect(646,138,1254,52,8,'#fff');
-  const summary=`พนักงานทั้งหมด ${ranked.length} | ทำงาน ${work} | หยุด ${off} | ลา ${leave} | รอกรอก ${pending}`;
+  const summary=`พนักงานทั้งหมด ${ranked.length} | ทำงาน ${work} | รอรูป ${photoWait} | หยุด ${off} | ลา ${leave} | รอกรอก ${pending}`;
   const summaryMM=`${mmExportLabel('total')} ${ranked.length} | ${mmExportLabel('work')} ${work} | ${mmExportLabel('off')} ${off} | ${mmExportLabel('leave')} ${leave} | ${mmExportLabel('pending')} ${pending}`;
   text(summary,1273,163,20,800,'#16324f','center');
   text(summaryMM,1273,184,14,700,'#38516b','center');
@@ -813,7 +839,8 @@ async function exportDailyImage(){
     // shift bar
     let shift='รอกรอกข้อมูล';
     let shiftColor='#7b8794';
-    if(r.status==='off'){shift='หยุดงาน';shiftColor='#ef1616';}
+    if(r.status==='photo_wait'){shift='รอรูปถ่ายยืนยันการทำงานวันนี้';shiftColor='#0ea5e9';}
+    else if(r.status==='off'){shift='หยุดงาน';shiftColor='#ef1616';}
     else if(r.status==='leave'){shift='ลา';shiftColor='#f1b92b';}
     else if(r.status==='work'){
       shift=time4Text(r);
@@ -864,7 +891,7 @@ async function exportDailyImage(){
   text('ลา',1410,fy+29,18,700,'#fff');
 
   roundRect(1490,fy,42,42,6,'#7b8794');
-  text('รอกรอกข้อมูล',1545,fy+29,18,700,'#fff');
+  text('รอกรอก / รอรูปยืนยัน',1545,fy+29,16,700,'#fff');
 
   text('“ทำงานดี มีอนาคต ไปด้วยกัน”',1890,fy+23,19,800,'#fff','right');
   text(mmExportLabel('slogan'),1890,fy+46,13,600,'#dbeafe','right');
