@@ -58,7 +58,7 @@ main{padding:12px;max-width:1180px;margin:auto}.panel{background:#fff;border-rad
   <div id="manageList" class="employee-list"></div>
 </section>
 <section id="historyView" class="hide">
-  <div class="panel"><div class="grid2"><div class="field"><label>ตั้งแต่วันที่</label><input id="historyFrom" type="date" value="2026-09-01"></div><div class="field"><label>ถึงวันที่</label><input id="historyTo" type="date" value="2026-09-30"></div></div><div class="actions"><button id="loadHistory" class="btn primary">แสดงประวัติ</button></div></div>
+  <div class="panel"><div class="grid2"><div class="field"><label>ตั้งแต่วันที่</label><input id="historyFrom" type="date" value="2026-09-01"></div><div class="field"><label>ถึงวันที่</label><input id="historyTo" type="date" value="2026-09-30"></div></div><div class="actions"><button id="loadHistory" class="btn primary">แสดงประวัติ</button><button id="exportHistorySummary" class="btn success">📷 ส่งออกสรุปประวัติเป็นรูป</button></div><div id="historySummary" class="history-summary-grid"></div></div>
   <div class="panel table-wrap"><table class="history"><thead><tr><th>วันที่</th><th>ชื่อ</th><th>สถานะ</th><th>เวลา</th><th>สถานที่</th><th>เงินเบิก</th></tr></thead><tbody id="historyBody"></tbody></table></div>
 </section>
 </main>
@@ -87,6 +87,7 @@ async function api(path,opts={}){
 function sync(msg,ok=true){$('#syncState').textContent=msg;$('#syncState').style.background=ok?'#ffffff1c':'#8b1d1d'}
 function shiftClass(start,end,status){if(status==='off')return's-off';if(status==='leave')return's-leave';if(end==='17:00:00'||end==='17:00')return's-1700';if(end==='18:00:00'||end==='18:00')return's-1800';if(end==='19:00:00'||end==='19:00')return's-1900';if(end==='20:00:00'||end==='20:00')return's-2000';if(end==='21:00:00'||end==='21:00')return's-2100';return's-2200'}
 function fmtMoney(n){return Number(n||0).toLocaleString('th-TH',{maximumFractionDigits:0})+' บาท'}
+function formatHalf(n){const v=Math.round((Number(n)||0)*2)/2;return Number.isInteger(v)?String(v):v.toFixed(1)}
 function recFor(id){
   const found=records.find(r=>r.employee_id===id);
   const r=found||{
@@ -203,7 +204,7 @@ function restoreLastWorkDate(){
   const saved=localStorage.getItem(LAST_WORK_DATE_KEY);
   if(saved)el.value=saved;
 }
-async function loadDaily(){rememberWorkDate();sync('กำลังโหลด…');try{employees=await api('sft_attendance_employees?select=*&is_active=eq.true&order=sort_seed.asc');await loadStats();const d=$('#workDate').value;records=await api('sft_attendance_records?select=*&work_date=eq.'+d);renderDaily();renderManage();sync('ซิงก์แล้ว ✓')}catch(e){console.error(e);sync('เชื่อมข้อมูลไม่สำเร็จ',false)}}
+async function loadDaily(){rememberWorkDate();sync('กำลังโหลด…');try{employees=await api('sft_attendance_employees?select=*&is_active=eq.true&order=sort_seed.asc');const d=$('#workDate').value;employees=employees.filter(e=>!e.created_at||String(e.created_at).slice(0,10)<=d);await loadStats();records=await api('sft_attendance_records?select=*&work_date=eq.'+d);renderDaily();renderManage();sync('ซิงก์แล้ว ✓')}catch(e){console.error(e);sync('เชื่อมข้อมูลไม่สำเร็จ',false)}}
 
 function isFemaleEmployee(e){
   const n=((e.name||'')+' '+(e.full_name||'')).toLowerCase();
@@ -367,8 +368,8 @@ function card(e,i){
         <div class="muted">${e.full_name||''}</div>
         <div class="stats">
           <span class="chip">ทำงานต่อเนื่อง ${st.streak||0} วัน</span>
-          <span class="chip">ทำงานสะสม ${st.work||0} วัน</span>
-          <span class="chip">OT สะสม ${Math.floor((st.otMinutes||0)/60)} ชม. ${(st.otMinutes||0)%60} นาที</span>
+          <span class="chip">ทำงานสะสม ${formatHalf((st.totalMinutes||0)/480)} วัน</span>
+          <span class="chip">OT สะสม ${formatHalf((st.otMinutes||0)/60)} ชม.</span>
           <span class="chip">หยุด ${st.off||0} วัน</span>
           <span class="chip">ลา ${st.leave||0} วัน</span>
           <span class="chip">เบิกสะสม ${fmtMoney(st.advance||0)}</span>
@@ -899,8 +900,33 @@ $('#empPhoto').addEventListener('change',async e=>{const f=e.target.files[0];if(
 function resizeImage(file,maxW,q){return new Promise((resolve,reject)=>{const fr=new FileReader();fr.onload=()=>{const img=new Image();img.onload=()=>{const scale=Math.min(1,maxW/img.width),c=document.createElement('canvas');c.width=Math.round(img.width*scale);c.height=Math.round(img.height*scale);c.getContext('2d').drawImage(img,0,0,c.width,c.height);resolve(c.toDataURL('image/jpeg',q))};img.onerror=reject;img.src=fr.result};fr.onerror=reject;fr.readAsDataURL(file)})}
 $('#employeeForm').addEventListener('submit',async e=>{e.preventDefault();const id=$('#empId').value,name=$('#empName').value.trim();if(!name)return;const body={name,full_name:$('#empFullName').value.trim(),photo_url:$('#photoPreview').src||null,is_active:true,sort_seed:employees.length?Math.max(...employees.map(x=>x.sort_seed||0))+1:1};try{if(id)await api('sft_attendance_employees?id=eq.'+id,{method:'PATCH',headers:{'Prefer':'return=minimal'},body:JSON.stringify(body)});else await api('sft_attendance_employees',{method:'POST',headers:{'Prefer':'return=minimal'},body:JSON.stringify(body)});closeModal();await loadDaily()}catch(err){alert('บันทึกพนักงานไม่สำเร็จ');console.error(err)}});
 async function removeEmployee(id){const e=employees.find(x=>x.id===id);if(!confirm(`ลบ ${e?.name||'พนักงาน'} ออกจากรายชื่อใช้งาน?\nประวัติเดิมจะยังคงอยู่`))return;try{await api('sft_attendance_employees?id=eq.'+id,{method:'PATCH',headers:{'Prefer':'return=minimal'},body:JSON.stringify({is_active:false})});await loadDaily()}catch(err){alert('ลบไม่สำเร็จ')}}
-async function loadHistory(){try{const a=$('#historyFrom').value,b=$('#historyTo').value;const rows=await api(`sft_attendance_records?select=*,sft_attendance_employees(name)&work_date=gte.${a}&work_date=lte.${b}&order=work_date.desc`);$('#historyBody').innerHTML=(rows||[]).map(r=>`<tr><td>${r.work_date}</td><td>${r.sft_attendance_employees?.name||''}</td><td><span class="pill ${r.status}">${r.status==='work'?'ทำงาน':r.status==='off'?'หยุด':'ลา'}</span></td><td>${r.status==='work'?time4Text(r):'-'}</td><td>${r.site||''}</td><td>${fmtMoney(r.advance_amount)}</td></tr>`).join('')}catch(e){console.error(e)}}
+function employeeHistoryStatus(x){
+  const total=x.work+x.off+x.leave;
+  if(!total)return {label:'ยังไม่มีข้อมูล',cls:'hs-watch'};
+  const offRate=x.off/total, leaveRate=x.leave/total, workRate=x.work/total;
+  if(x.off>=3 || offRate>=0.20)return {label:'ขาดงาน/หยุดบ่อย',cls:'hs-absent'};
+  if(x.leave>=3 || leaveRate>=0.20)return {label:'ลาบ่อย',cls:'hs-leave'};
+  if(x.off>=2 || offRate>=0.10)return {label:'ควรเฝ้าระวัง',cls:'hs-off'};
+  if(workRate>=0.90 && x.off===0)return {label:'มาทำงานดี',cls:'hs-good'};
+  return {label:'ปกติ',cls:'hs-watch'};
+}
+let lastHistorySummary=[];
+async function loadHistory(){try{
+  const a=$('#historyFrom').value,b=$('#historyTo').value;
+  const rows=await api(`sft_attendance_records?select=*,sft_attendance_employees(name)&work_date=gte.${a}&work_date=lte.${b}&order=work_date.desc`);
+  $('#historyBody').innerHTML=(rows||[]).map(r=>`<tr><td>${r.work_date}</td><td>${r.sft_attendance_employees?.name||''}</td><td><span class="pill ${r.status}">${r.status==='work'?'ทำงาน':r.status==='off'?'หยุด':'ลา'}</span></td><td>${r.status==='work'?time4Text(r):'-'}</td><td>${r.site||''}</td><td>${fmtMoney(r.advance_amount)}</td></tr>`).join('');
+  const m={};
+  for(const r0 of rows||[]){const r=normalizePunches({...r0});const id=r.employee_id;const name=r.sft_attendance_employees?.name||employees.find(e=>e.id===id)?.name||'พนักงาน';if(!m[id])m[id]={id,name,work:0,off:0,leave:0,totalMinutes:0,otMinutes:0,advance:0,first:r.work_date,last:r.work_date};const x=m[id];x.first=x.first<r.work_date?x.first:r.work_date;x.last=x.last>r.work_date?x.last:r.work_date;x.advance+=Number(r.advance_amount||0);if(r.status==='work'){const mins=workedMinutesRec(r);if(mins>0){x.work++;x.totalMinutes+=mins;x.otMinutes+=Math.max(0,mins-480)}}else if(r.status==='off')x.off++;else if(r.status==='leave')x.leave++;}
+  lastHistorySummary=Object.values(m).sort((x,y)=>y.work-x.work||x.off-y.off);
+  $('#historySummary').innerHTML=lastHistorySummary.map(x=>{const st=employeeHistoryStatus(x);return `<div class="history-card"><h3>${x.name}</h3><span class="history-status ${st.cls}">${st.label}</span><div class="history-metrics"><span class="chip">ทำงาน ${formatHalf(x.totalMinutes/480)} วัน</span><span class="chip">OT ${formatHalf(x.otMinutes/60)} ชม.</span><span class="chip">หยุด ${x.off} วัน</span><span class="chip">ลา ${x.leave} วัน</span><span class="chip">เบิก ${fmtMoney(x.advance)}</span></div><div class="muted">มีประวัติในช่วง ${x.first} ถึง ${x.last}</div></div>`}).join('')||'<div class="notice">ไม่พบประวัติในช่วงวันที่เลือก</div>';
+}catch(e){console.error(e)}}
+async function exportHistorySummaryImage(){
+  if(!lastHistorySummary.length)await loadHistory();if(!lastHistorySummary.length){alert('ไม่พบข้อมูลสำหรับส่งออก');return}
+  const a=$('#historyFrom').value,b=$('#historyTo').value,W=1200,rowH=116,H=150+lastHistorySummary.length*rowH+50,c=document.createElement('canvas');c.width=W;c.height=H;const x=c.getContext('2d');x.fillStyle='#eef3f8';x.fillRect(0,0,W,H);x.fillStyle='#0f2f55';x.fillRect(0,0,W,120);x.fillStyle='#fff';x.font='800 34px sans-serif';x.fillText('สรุปประวัติพนักงาน SF&T',40,50);x.font='22px sans-serif';x.fillText(`${a} ถึง ${b}`,40,88);let y=145;lastHistorySummary.forEach((r,i)=>{const st=employeeHistoryStatus(r);x.fillStyle='#fff';x.fillRect(25,y-10,W-50,rowH-8);x.fillStyle='#152238';x.font='800 25px sans-serif';x.fillText(`${i+1}. ${r.name}`,45,y+25);x.font='20px sans-serif';x.fillText(`ทำงาน ${formatHalf(r.totalMinutes/480)} วัน   OT ${formatHalf(r.otMinutes/60)} ชม.   หยุด ${r.off}   ลา ${r.leave}`,45,y+60);x.font='800 20px sans-serif';x.fillText(`สถานะ: ${st.label}`,760,y+40);y+=rowH});
+  const blob=await new Promise(res=>c.toBlob(res,'image/png',0.95));if(!blob){alert('สร้างรูปไม่สำเร็จ');return}const file=new File([blob],`SFT_History_${a}_${b}.png`,{type:'image/png'});if(navigator.share&&navigator.canShare?.({files:[file]})){await navigator.share({files:[file],title:'สรุปประวัติพนักงาน SF&T'})}else{const u=URL.createObjectURL(blob),link=document.createElement('a');link.href=u;link.download=file.name;link.click();setTimeout(()=>URL.revokeObjectURL(u),2000)}
+}
 $('#loadHistory').addEventListener('click',loadHistory);
+$('#exportHistorySummary').addEventListener('click',exportHistorySummaryImage);
 $$('.tab').forEach(b=>b.addEventListener('click',()=>{$$('.tab').forEach(x=>x.classList.remove('active'));b.classList.add('active');const t=b.dataset.tab;$('#dailyView').classList.toggle('hide',t!=='daily');$('#employeesView').classList.toggle('hide',t!=='employees');$('#historyView').classList.toggle('hide',t!=='history');if(t==='history')loadHistory()}));
 function hasUnsavedDrafts(){
   return !!document.querySelector('.save-state.dirty');
