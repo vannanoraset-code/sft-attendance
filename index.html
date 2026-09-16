@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
+<meta name="theme-color" content="#0b2742"/>
+<title>SF&T บันทึกการทำงานพนักงาน</title>
+<link rel="manifest" href="manifest.webmanifest"/>
+<style>
+:root{--navy:#0b2742;--red:#e5172f;--green:#13a34a;--blue:#198cff;--yellow:#f8b51b;--bg:#eef3f7;--card:#fff;--text:#17212b}
+*{box-sizing:border-box}body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Tahoma,sans-serif;background:var(--bg);color:var(--text)}
+header{background:linear-gradient(135deg,#081d32,#103e67);color:#fff;padding:14px 14px 10px;position:sticky;top:0;z-index:5;box-shadow:0 2px 10px #0003}
+.brand{display:flex;align-items:center;gap:10px}.brand img{width:82px;height:42px;object-fit:contain;background:#fff;border-radius:8px}.brand h1{font-size:18px;margin:0}.brand small{opacity:.85}
+.wrap{padding:12px;max-width:1200px;margin:auto}.toolbar{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px}.toolbar .full{grid-column:1/-1}.toolbar input,.toolbar select,.toolbar button{width:100%;padding:11px;border:1px solid #c9d2dc;border-radius:10px;font-size:15px;background:#fff}.toolbar button{background:var(--navy);color:#fff;font-weight:700;border:none}.toolbar button.red{background:var(--red)}
+.summary{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:10px 0}.sum{background:#fff;padding:10px;border-radius:12px;text-align:center;box-shadow:0 2px 8px #0001}.sum b{font-size:21px;display:block}.sum.work b{color:var(--green)}.sum.off b{color:var(--red)}.sum.money b{color:#7a4e00}
+.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.card{background:#fff;border-radius:14px;overflow:hidden;box-shadow:0 2px 10px #0001;border:2px solid #dce5ec}.photo{aspect-ratio:1/1;overflow:hidden;background:#eee}.photo img{width:100%;height:100%;object-fit:cover;object-position:center 22%}.name{font-weight:800;font-size:16px;padding:7px 8px 3px;text-align:center}.stats{font-size:12px;display:flex;justify-content:center;gap:8px;padding:0 8px 6px}.shift{padding:8px;color:#fff;text-align:center;font-weight:800}.shift.normal{background:var(--green)}.shift.ot1{background:#25a8e0}.shift.ot2{background:var(--blue)}.shift.ot3{background:#8b47d1}.shift.ot4{background:#ff8a1f}.shift.long{background:#e63737}.shift.off{background:var(--red)}.shift.leave{background:#dcae00;color:#111}.shift.other{background:#555}
+.moneyrow{display:grid;grid-template-columns:1fr 1fr;gap:5px;padding:7px}.moneyrow label{font-size:11px;color:#586574}.moneyrow input{width:100%;padding:7px;border:1px solid #d5dde4;border-radius:8px;font-size:13px}.actions{padding:0 7px 8px;display:grid;grid-template-columns:1fr 1fr;gap:5px}.actions select,.actions input{padding:7px;border:1px solid #d5dde4;border-radius:8px;font-size:12px;background:#fff}
+.footerbar{position:sticky;bottom:0;background:#fff;border-top:1px solid #dfe5ea;padding:8px;display:flex;gap:8px;z-index:4}.footerbar button{flex:1;padding:12px;border:none;border-radius:10px;font-weight:800}.save{background:var(--green);color:#fff}.export{background:var(--navy);color:#fff}.reset{background:#f4f4f4}
+.note{font-size:12px;color:#5a6773;margin:8px 2px 70px}
+@media(min-width:700px){.grid{grid-template-columns:repeat(3,1fr)}.toolbar{grid-template-columns:repeat(4,1fr)}.toolbar .full{grid-column:auto}}
+@media(min-width:1000px){.grid{grid-template-columns:repeat(6,1fr)}}
+</style>
+</head>
+<body>
+<header><div class="brand"><img src="assets/logo.jpeg" alt="SF&T"><div><h1>บันทึกการทำงานพนักงาน</h1><small>บริษัท ศักวิเศษ เฟรม แอนด์ ทรัส จำกัด</small></div></div></header>
+<div class="wrap">
+  <div class="toolbar">
+    <input id="date" type="date" value="2026-09-01"/>
+    <input id="site" value="ไซต์งาน River Pro – WHA หนองแค สระบุรี"/>
+    <button id="sortBtn">เรียงตามวันทำงาน</button>
+    <button id="seedBtn">ใส่ข้อมูล 1/9/69</button>
+  </div>
+  <div class="summary">
+    <div class="sum work"><span>ทำงานวันนี้</span><b id="workCount">0</b></div>
+    <div class="sum off"><span>หยุดวันนี้</span><b id="offCount">0</b></div>
+    <div class="sum"><span>พนักงาน</span><b>18</b></div>
+    <div class="sum money"><span>เงินเบิกวันนี้</span><b id="moneyToday">0</b></div>
+  </div>
+  <div id="grid" class="grid"></div>
+  <div class="note">เงินเบิกสะสมรีเซ็ตเป็น 0 ในวันที่ 10 และ 25 ของทุกเดือน • ข้อมูลเก็บในเครื่องนี้ด้วย Local Storage • กด “บันทึก” ทุกครั้งหลังแก้ข้อมูล</div>
+</div>
+<div class="footerbar"><button class="save" id="saveBtn">บันทึก</button><button class="export" id="exportBtn">ส่งออกภาพ</button><button class="reset" id="clearBtn">ล้างข้อมูลวันนี้</button></div>
+<script>
+const employees=[
+['เชียร์','01.jpg'],['ต้น','02.jpg'],['แหล่','03.jpg'],['วัน','04.jpg'],['ลุ่ง','05.jpg'],['บาส','06.jpg'],['โกเพียว','07.jpg'],['อองแง','08.jpg'],['โกนุย','09.jpg'],['พิลิโป','10.jpg'],['โจวานี่','11.jpg'],['เพโต','12.jpg'],['อายมาโด','13.jpg'],['คินวิน','14.jpg'],['วินนาย','15.jpg'],['ยานซู','16.jpg'],['กัลโร','17.jpg'],['คิม','18.jpg']
+].map((x,i)=>({id:i+1,name:x[0],photo:'assets/'+x[1],workDays:0,offDays:0,totalAdvance:0,status:'หยุดงาน',time:'',advance:0}));
+let data=JSON.parse(localStorage.getItem('sft-attendance-v1')||'{}');
+let roster=JSON.parse(localStorage.getItem('sft-roster-v1')||'null')||employees;
+const fmt=n=>Number(n||0).toLocaleString('th-TH');
+function clsFor(e){if(e.status==='หยุดงาน')return'off';if(e.status==='ลา')return'leave';let t=e.time||'';if(t==='08:00-17:00')return'normal';if(t==='08:00-18:00')return'ot1';if(t==='08:00-19:00')return'ot2';if(t==='08:00-20:00')return'ot3';if(t==='08:00-21:00')return'ot4';if(t.includes('22:00'))return'long';return'other'}
+function render(){const g=document.getElementById('grid');g.innerHTML='';roster.forEach((e,idx)=>{const c=document.createElement('div');c.className='card';c.dataset.id=e.id;c.innerHTML=`<div class="photo"><img src="${e.photo}"></div><div class="name">${idx+1}. ${e.name}</div><div class="stats"><span>ทำงาน <b>${e.workDays}</b> วัน</span><span>หยุด <b>${e.offDays}</b> วัน</span></div><div class="shift ${clsFor(e)}">${e.status==='ทำงาน'?(e.time||'ทำงาน'):e.status}</div><div class="actions"><select class="status"><option ${e.status==='ทำงาน'?'selected':''}>ทำงาน</option><option ${e.status==='หยุดงาน'?'selected':''}>หยุดงาน</option><option ${e.status==='ลา'?'selected':''}>ลา</option></select><input class="time" placeholder="08:00-17:00" value="${e.time||''}"></div><div class="moneyrow"><div><label>เงินเบิกวันนี้</label><input class="adv" type="number" min="0" value="${e.advance||0}"></div><div><label>ยอดสะสม</label><input value="${e.totalAdvance||0}" disabled></div></div>`;g.appendChild(c)}); updateSummary();}
+function syncFromUI(){document.querySelectorAll('.card').forEach(c=>{const e=roster.find(x=>x.id==c.dataset.id);e.status=c.querySelector('.status').value;e.time=c.querySelector('.time').value.trim();e.advance=Number(c.querySelector('.adv').value||0)});}
+function updateSummary(){let work=roster.filter(e=>e.status==='ทำงาน').length,off=roster.filter(e=>e.status==='หยุดงาน').length,m=roster.reduce((s,e)=>s+Number(e.advance||0),0);workCount.textContent=work;offCount.textContent=off;moneyToday.textContent=fmt(m)+' ฿'}
+document.addEventListener('input',e=>{if(e.target.closest('.card')){syncFromUI();updateSummary();renderShiftOnly()}});document.addEventListener('change',e=>{if(e.target.closest('.card')){syncFromUI();updateSummary();renderShiftOnly()}});
+function renderShiftOnly(){document.querySelectorAll('.card').forEach(c=>{const e=roster.find(x=>x.id==c.dataset.id);const sh=c.querySelector('.shift');sh.className='shift '+clsFor(e);sh.textContent=e.status==='ทำงาน'?(e.time||'ทำงาน'):e.status})}
+function maybeResetTotals(dateStr){const d=new Date(dateStr+'T00:00:00');const day=d.getDate();if(day===10||day===25)roster.forEach(e=>e.totalAdvance=0)}
+saveBtn.onclick=()=>{syncFromUI();const d=date.value;maybeResetTotals(d);roster.forEach(e=>{if(!data[d])data[d]={};if(!data[d][e.id]){if(e.status==='ทำงาน')e.workDays++;else if(e.status==='หยุดงาน')e.offDays++;e.totalAdvance+=e.advance;}data[d][e.id]={status:e.status,time:e.time,advance:e.advance};});localStorage.setItem('sft-attendance-v1',JSON.stringify(data));localStorage.setItem('sft-roster-v1',JSON.stringify(roster));alert('บันทึกแล้ว');render();}
+sortBtn.onclick=()=>{syncFromUI();roster.sort((a,b)=>b.workDays-a.workDays||a.offDays-b.offDays||a.id-b.id);localStorage.setItem('sft-roster-v1',JSON.stringify(roster));render()}
+clearBtn.onclick=()=>{roster.forEach(e=>{e.status='หยุดงาน';e.time='';e.advance=0});render()}
+seedBtn.onclick=()=>{date.value='2026-09-01';roster.forEach(e=>{e.status='หยุดงาน';e.time='';e.advance=0});const work13=['ต้น','โจวานี่','เพโต','อายมาโด','โกนุย'];const work8=['วินนาย','คินวิน','ยานซู','ลุ่ง','วัน','พิลิโป','แหล่','อองแง'];roster.forEach(e=>{if(work13.includes(e.name)){e.status='ทำงาน';e.time='13:00-18:00'}if(work8.includes(e.name)){e.status='ทำงาน';e.time='08:00-17:00'}});[['บาส',200],['เชียร์',300],['พิลิโป',300],['วินนาย',500]].forEach(([n,v])=>{const e=roster.find(x=>x.name===n);if(e)e.advance=v});render()}
+exportBtn.onclick=()=>{window.print()}
+render();
+</script>
+</body></html>
