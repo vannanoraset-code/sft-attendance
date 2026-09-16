@@ -219,21 +219,25 @@ function rankEmployees(){
     const ra=recFor(a.id), rb=recFor(b.id);
 
     const group = (r)=>{
-      if(r.status==='pending') return 0;                       // รอกรอกข้อมูลไว้บนสุด เพื่อกรอกได้เร็ว
-      if(r.status==='work' && workedMinutesRec(r)>0) return 1; // บันทึกทำงานแล้ว
-      return 2;                                                // หยุด/ลา ไว้ท้าย
+      // ลำดับประจำวัน: ทำงาน > รอกรอก > ลา > ขาด/หยุดงาน
+      // คนขาดงานโดยไม่แจ้ง (สถานะ off) ต้องอยู่ลำดับสุดท้ายเสมอ
+      if(r.status==='work' && workedMinutesRec(r)>0) return 0;
+      if(r.status==='pending') return 1;
+      if(r.status==='leave') return 2;
+      if(r.status==='off') return 3;
+      return 3;
     };
 
     const ga=group(ra), gb=group(rb);
     if(ga!==gb) return ga-gb;
 
     // คนที่ยังรอกรอก ไม่ต้องรันอันดับ ให้คงลำดับตั้งต้น
-    if(ga===0){
+    if(ga===1){
       return (a.sort_seed||999)-(b.sort_seed||999);
     }
 
     // คนที่บันทึกทำงานแล้ว ใช้กติกาอันดับเดิม
-    if(ga===1){
+    if(ga===0){
       // แรงงานหลัก: ผู้ชายจัดอันดับก่อนผู้หญิงเสมอ
       const genderA=isFemaleEmployee(a)?1:0;
       const genderB=isFemaleEmployee(b)?1:0;
@@ -256,10 +260,7 @@ function rankEmployees(){
       return (a.sort_seed||999)-(b.sort_seed||999);
     }
 
-    // คนหยุด/ลาอยู่ท้าย คงลำดับตั้งต้นเพื่ออ่านง่าย
-    const genderA=isFemaleEmployee(a)?1:0;
-    const genderB=isFemaleEmployee(b)?1:0;
-    if(genderA!==genderB) return genderA-genderB;
+    // ลาและขาด/หยุดงานแยกกลุ่มแล้ว: off จะอยู่ท้ายกว่า leave เสมอ
     return (a.sort_seed||999)-(b.sort_seed||999);
   });
 }
