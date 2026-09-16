@@ -58,12 +58,12 @@ main{padding:12px;max-width:1180px;margin:auto}.panel{background:#fff;border-rad
   <div id="employeeList" class="employee-list"></div>
 </section>
 <section id="employeesView" class="hide">
-  <div class="panel"><div class="actions"><button id="addEmployee" class="btn primary">+ เพิ่มพนักงาน</button></div></div>
+  <div class="panel"><div class="actions"><button id="addEmployee" class="btn primary">+ เพิ่มพนักงาน</button><button id="recoverEmployee" class="btn soft">กู้รายชื่อพนักงานเดิม</button></div></div>
   <div id="manageList" class="employee-list"></div>
 </section>
 <section id="historyView" class="hide">
   <div class="panel"><div class="grid2"><div class="field"><label>ตั้งแต่วันที่</label><input id="historyFrom" type="date" value="2026-09-01"></div><div class="field"><label>ถึงวันที่</label><input id="historyTo" type="date" value="2026-09-30"></div></div><div class="actions"><button id="loadHistory" class="btn primary">แสดงประวัติ</button><button id="exportHistorySummary" class="btn success">📷 ส่งออกสรุปประวัติเป็นรูป</button></div><div id="historySummary" class="history-summary-grid"></div></div>
-  <div class="panel table-wrap"><table class="history"><thead><tr><th>วันที่</th><th>ชื่อ</th><th>สถานะ</th><th>เวลา</th><th>สถานที่</th><th>เงินเบิก</th></tr></thead><tbody id="historyBody"></tbody></table></div>
+  <div class="panel table-wrap"><table class="history"><thead><tr><th>วันที่</th><th>ชื่อ</th><th>สถานะ</th><th>เวลา</th><th>สถานที่</th><th>เงินเบิก</th><th>แก้ไข</th></tr></thead><tbody id="historyBody"></tbody></table></div>
 </section>
 </main>
 <div id="modal" class="modal hide" aria-hidden="true"><div class="modal-card"><h2 id="modalTitle">เพิ่มพนักงาน</h2><form id="employeeForm"><input type="hidden" id="empId"><img id="photoPreview" class="photo-preview" alt="รูปพนักงาน"><div class="field"><label>ชื่อเรียก</label><input id="empName" required></div><div class="field"><label>ชื่อเต็ม</label><input id="empFullName"></div><div class="field"><label>รูปพนักงาน</label><input id="empPhoto" type="file" accept="image/*"></div><div class="actions"><button class="btn primary" type="submit">บันทึก</button><button id="cancelModal" class="btn soft" type="button">ยกเลิก</button></div></form></div></div>
@@ -927,6 +927,7 @@ async function exportDailyImage(){
 $('#exportDaily').addEventListener('click',exportDailyImage);
 $('#workDate').addEventListener('change',()=>{rememberWorkDate();loadDaily()});
 function renderManage(){const ranked=rankEmployees();$('#manageList').innerHTML=ranked.map((e,i)=>`<article class="emp"><div class="emp-top"><img src="${(e.photo_url&&EMBEDDED_PHOTOS[e.photo_url])||e.photo_url||''}"><div><h3><span class="rank">${i+1}</span>${e.name}</h3><div class="muted">${e.full_name||''}</div><div class="actions"><button class="btn soft edit" data-id="${e.id}">แก้ไข</button><button class="btn danger del" data-id="${e.id}">ลบพนักงาน</button></div></div></div></article>`).join('');$$('.edit').forEach(b=>b.addEventListener('click',()=>openEdit(Number(b.dataset.id))));$$('.del').forEach(b=>b.addEventListener('click',()=>removeEmployee(Number(b.dataset.id))))}
+$('#recoverEmployee').addEventListener('click',async()=>{sync('กำลังตรวจรายชื่อเดิม…');const missing=await recoverMissingEmployeesFromHistory();if(!missing.length){sync('ไม่พบรายชื่อที่หาย');alert('ไม่พบพนักงานเดิมที่หายจากรายชื่อในข้อมูลประวัติ');return;}const names=missing.map(x=>x.name).join(', ');if(!confirm('พบรายชื่อเดิมที่ไม่อยู่ในหน้าพนักงาน: '+names+'\n\nต้องการกู้กลับเข้ารายชื่อใช้งานหรือไม่?')){sync('ยกเลิกการกู้รายชื่อ');return;}for(const e of missing){await api('sft_attendance_employees?id=eq.'+e.id,{method:'PATCH',headers:{'Prefer':'return=minimal'},body:JSON.stringify({name:e.name,full_name:e.full_name,photo_url:e.photo_url,is_active:true,sort_seed:e.sort_seed})});}await loadDaily();sync('กู้รายชื่อแล้ว ✓');});
 $('#addEmployee').addEventListener('click',()=>openEdit());
 function openEdit(id){const e=employees.find(x=>x.id===id);$('#empId').value=e?.id||'';$('#empName').value=e?.name||'';$('#empFullName').value=e?.full_name||'';$('#photoPreview').src=(e?.photo_url&&EMBEDDED_PHOTOS[e.photo_url])||e?.photo_url||'';$('#modalTitle').textContent=e?'แก้ไขพนักงาน':'เพิ่มพนักงาน';$('#modal').classList.remove('hide');$('#modal').setAttribute('aria-hidden','false')}
 $('#cancelModal').addEventListener('click',closeModal);function closeModal(){$('#modal').classList.add('hide');$('#modal').setAttribute('aria-hidden','true');$('#employeeForm').reset();$('#photoPreview').src=''}
@@ -934,6 +935,18 @@ $('#empPhoto').addEventListener('change',async e=>{const f=e.target.files[0];if(
 function resizeImage(file,maxW,q){return new Promise((resolve,reject)=>{const fr=new FileReader();fr.onload=()=>{const img=new Image();img.onload=()=>{const scale=Math.min(1,maxW/img.width),c=document.createElement('canvas');c.width=Math.round(img.width*scale);c.height=Math.round(img.height*scale);c.getContext('2d').drawImage(img,0,0,c.width,c.height);resolve(c.toDataURL('image/jpeg',q))};img.onerror=reject;img.src=fr.result};fr.onerror=reject;fr.readAsDataURL(file)})}
 $('#employeeForm').addEventListener('submit',async e=>{e.preventDefault();const id=$('#empId').value,name=$('#empName').value.trim();if(!name)return;const body={name,full_name:$('#empFullName').value.trim(),photo_url:$('#photoPreview').src||null,is_active:true,sort_seed:employees.length?Math.max(...employees.map(x=>x.sort_seed||0))+1:1};try{if(id)await api('sft_attendance_employees?id=eq.'+id,{method:'PATCH',headers:{'Prefer':'return=minimal'},body:JSON.stringify(body)});else await api('sft_attendance_employees',{method:'POST',headers:{'Prefer':'return=minimal'},body:JSON.stringify(body)});closeModal();await loadDaily()}catch(err){alert('บันทึกพนักงานไม่สำเร็จ');console.error(err)}});
 async function removeEmployee(id){const e=employees.find(x=>x.id===id);if(!confirm(`ลบ ${e?.name||'พนักงาน'} ออกจากรายชื่อใช้งาน?\nประวัติเดิมจะยังคงอยู่`))return;try{await api('sft_attendance_employees?id=eq.'+id,{method:'PATCH',headers:{'Prefer':'return=minimal'},body:JSON.stringify({is_active:false})});await loadDaily()}catch(err){alert('ลบไม่สำเร็จ')}}
+
+async function recoverMissingEmployeesFromHistory(){
+  try{
+    const rows=await api('sft_attendance_records?select=*,sft_attendance_employees&work_date=gte.2026-09-01&work_date=lte.2999-12-31&order=work_date.desc');
+    const known=new Set(employees.map(e=>Number(e.id))), missing=new Map();
+    for(const r of rows||[]){
+      const j=r.sft_attendance_employees;
+      if(j && r.employee_id && !known.has(Number(r.employee_id)) && j.name){missing.set(Number(r.employee_id),{id:Number(r.employee_id),name:j.name,full_name:j.full_name||'',photo_url:j.photo_url||null,sort_seed:j.sort_seed||999});}
+    }
+    return [...missing.values()];
+  }catch(e){console.error('recoverMissingEmployeesFromHistory',e);return []}
+}
 function employeeHistoryStatus(x){
   const total=x.work+x.off+x.leave;
   if(!total)return {label:'ยังไม่มีข้อมูล',cls:'hs-watch'};
@@ -948,7 +961,15 @@ let lastHistorySummary=[];
 async function loadHistory(){try{
   const a=$('#historyFrom').value,b=$('#historyTo').value;
   const rows=await api(`sft_attendance_records?select=*,sft_attendance_employees(name,created_at)&work_date=gte.${a}&work_date=lte.${b}&order=work_date.desc`);
-  $('#historyBody').innerHTML=(rows||[]).map(r=>`<tr><td>${r.work_date}</td><td>${r.sft_attendance_employees?.name||''}</td><td><span class="pill ${r.status}">${r.status==='work'?'ทำงาน':r.status==='off'?'หยุด':'ลา'}</span></td><td>${r.status==='work'?time4Text(r):'-'}</td><td>${r.site||''}</td><td>${fmtMoney(r.advance_amount)}</td></tr>`).join('');
+  $('#historyBody').innerHTML=(rows||[]).map(r=>`<tr><td>${r.work_date}</td><td>${r.sft_attendance_employees?.name||employees.find(e=>e.id===r.employee_id)?.name||''}</td><td><span class="pill ${r.status}">${r.status==='work'?'ทำงาน':r.status==='off'?'หยุด':'ลา'}</span></td><td>${r.status==='work'?time4Text(r):'-'}</td><td>${r.site||''}</td><td>${fmtMoney(r.advance_amount)}</td><td><button class="btn soft history-edit" data-date="${r.work_date}" data-emp="${r.employee_id}">แก้ไข</button></td></tr>`).join('');
+  $$('.history-edit').forEach(btn=>btn.addEventListener('click',async()=>{
+    const date=btn.dataset.date, empId=Number(btn.dataset.emp);
+    $('#workDate').value=date; rememberWorkDate();
+    $$('.tab').forEach(x=>x.classList.toggle('active',x.dataset.tab==='daily'));
+    $('#dailyView').classList.remove('hide'); $('#employeesView').classList.add('hide'); $('#historyView').classList.add('hide');
+    await loadDaily();
+    const card=document.querySelector(`.emp[data-id="${empId}"]`); if(card) card.scrollIntoView({behavior:'smooth',block:'center'});
+  }));
   const m={};
   for(const r0 of rows||[]){const r=normalizePunches({...r0});const joinedCreated=r.sft_attendance_employees?.created_at?String(r.sft_attendance_employees.created_at).slice(0,10):'';if(joinedCreated&&r.work_date<joinedCreated)continue;const id=r.employee_id;const name=r.sft_attendance_employees?.name||employees.find(e=>e.id===id)?.name||'พนักงาน';if(!m[id])m[id]={id,name,work:0,off:0,leave:0,totalMinutes:0,otMinutes:0,advance:0,first:r.work_date,last:r.work_date};const x=m[id];x.first=x.first<r.work_date?x.first:r.work_date;x.last=x.last>r.work_date?x.last:r.work_date;x.advance+=Number(r.advance_amount||0);if(r.status==='work'){const mins=workedMinutesRec(r);if(mins>0){x.work+=Math.round((mins/480)*2)/2;x.totalMinutes+=mins;x.otMinutes+=Math.max(0,mins-480)}}else if(r.status==='off')x.off++;else if(r.status==='leave')x.leave++;}
   lastHistorySummary=Object.values(m).sort((x,y)=>y.work-x.work||x.off-y.off);
