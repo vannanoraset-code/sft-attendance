@@ -210,7 +210,7 @@ function restoreLastWorkDate(){
   const saved=localStorage.getItem(LAST_WORK_DATE_KEY);
   if(saved)el.value=saved;
 }
-async function loadDaily(){rememberWorkDate();sync('กำลังโหลด…');try{employees=await api('sft_attendance_employees?select=*&is_active=eq.true&order=sort_seed.asc');const d=$('#workDate').value;employees=employees.filter(e=>!e.created_at||String(e.created_at).slice(0,10)<=d);await loadStats();records=await api('sft_attendance_records?select=*&work_date=eq.'+d);renderDaily();renderManage();sync('ซิงก์แล้ว ✓')}catch(e){console.error(e);sync('เชื่อมข้อมูลไม่สำเร็จ',false)}}
+async function loadDaily(){rememberWorkDate();sync('กำลังโหลด…');try{const d=$('#workDate').value;employees=await api('sft_attendance_employees?select=*&is_active=eq.true&order=sort_seed.asc');const allRecords=await api('sft_attendance_records?select=employee_id,status,work_date,start_time,morning_out,afternoon_in,end_time,advance_amount&order=work_date.asc');const firstRecord={};for(const r of allRecords||[]){if(!r||!r.employee_id||!r.work_date)continue;if(!firstRecord[r.employee_id]||r.work_date<firstRecord[r.employee_id])firstRecord[r.employee_id]=r.work_date}employees=employees.filter(e=>{const created=(e.created_at?String(e.created_at).slice(0,10):'');const first=firstRecord[e.id]||'';if(first)return first<=d;return !created||created<=d});await loadStats();records=await api('sft_attendance_records?select=*&work_date=eq.'+d);renderDaily();renderManage();sync('ซิงก์แล้ว ✓')}catch(e){console.error(e);sync('เชื่อมข้อมูลไม่สำเร็จ',false)}}
 
 function isFemaleEmployee(e){
   const n=((e.name||'')+' '+(e.full_name||'')).toLowerCase();
