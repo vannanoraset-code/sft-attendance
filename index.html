@@ -63,7 +63,7 @@ main{padding:12px;max-width:1180px;margin:auto}.panel{background:#fff;border-rad
 </section>
 <section id="historyView" class="hide">
   <div class="panel"><div class="grid2"><div class="field"><label>ตั้งแต่วันที่</label><input id="historyFrom" type="date" value="2026-09-01"></div><div class="field"><label>ถึงวันที่</label><input id="historyTo" type="date" value="2026-09-30"></div></div><div class="actions"><button id="loadHistory" class="btn primary">แสดงประวัติ</button><button id="exportHistorySummary" class="btn success">📷 ส่งออกสรุปประวัติเป็นรูป</button></div><div id="historySummary" class="history-summary-grid"></div></div>
-  <div class="panel table-wrap"><table class="history"><thead><tr><th>วันที่</th><th>ชื่อ</th><th>สถานะ</th><th>เวลา</th><th>สถานที่</th><th>เงินเบิก</th></tr></thead><tbody id="historyBody"></tbody></table></div>
+  <div class="panel table-wrap"><table class="history"><thead><tr><th>วันที่</th><th>ชื่อ</th><th>สถานะ</th><th>เวลา</th><th>สถานที่</th><th>เงินเบิก</th><th>แก้ไข</th></tr></thead><tbody id="historyBody"></tbody></table></div>
 </section>
 </main>
 <div id="modal" class="modal hide" aria-hidden="true"><div class="modal-card"><h2 id="modalTitle">เพิ่มพนักงาน</h2><form id="employeeForm"><input type="hidden" id="empId"><img id="photoPreview" class="photo-preview" alt="รูปพนักงาน"><div class="field"><label>ชื่อเรียก</label><input id="empName" required></div><div class="field"><label>ชื่อเต็ม</label><input id="empFullName"></div><div class="field"><label>รูปพนักงาน</label><input id="empPhoto" type="file" accept="image/*"></div><div class="actions"><button class="btn primary" type="submit">บันทึก</button><button id="cancelModal" class="btn soft" type="button">ยกเลิก</button></div></form></div></div>
@@ -952,7 +952,15 @@ let lastHistorySummary=[];
 async function loadHistory(){try{
   const a=$('#historyFrom').value,b=$('#historyTo').value;
   const rows=await api(`sft_attendance_records?select=*,sft_attendance_employees(name,created_at)&work_date=gte.${a}&work_date=lte.${b}&order=work_date.desc`);
-  $('#historyBody').innerHTML=(rows||[]).map(r=>`<tr><td>${r.work_date}</td><td>${r.sft_attendance_employees?.name||''}</td><td><span class="pill ${r.status}">${r.status==='work'?'ทำงาน':r.status==='off'?'หยุด':'ลา'}</span></td><td>${r.status==='work'?time4Text(r):'-'}</td><td>${r.site||''}</td><td>${fmtMoney(r.advance_amount)}</td></tr>`).join('');
+  $('#historyBody').innerHTML=(rows||[]).map(r=>`<tr><td>${r.work_date}</td><td>${r.sft_attendance_employees?.name||''}</td><td><span class="pill ${r.status}">${r.status==='work'?'ทำงาน':r.status==='off'?'หยุด':'ลา'}</span></td><td>${r.status==='work'?time4Text(r):'-'}</td><td>${r.site||''}</td><td>${fmtMoney(r.advance_amount)}</td><td><button type="button" class="btn soft history-edit" data-date="${r.work_date}">แก้ไข</button></td></tr>`).join('');
+  $$('.history-edit').forEach(btn=>btn.addEventListener('click',async()=>{
+    const date=btn.dataset.date;if(!date)return;
+    $('#workDate').value=date;
+    $$('.tab').forEach(x=>x.classList.remove('active'));
+    const dailyTab=document.querySelector('.tab[data-tab="daily"]');if(dailyTab)dailyTab.classList.add('active');
+    $('#dailyView').classList.remove('hide');$('#employeesView').classList.add('hide');$('#historyView').classList.add('hide');
+    await loadDaily();window.scrollTo({top:0,behavior:'smooth'});
+  }));
   const m={};
   for(const r0 of rows||[]){const r=normalizePunches({...r0});const joinedCreated=r.sft_attendance_employees?.created_at?String(r.sft_attendance_employees.created_at).slice(0,10):'';if(joinedCreated&&r.work_date<joinedCreated)continue;const id=r.employee_id;const name=r.sft_attendance_employees?.name||employees.find(e=>e.id===id)?.name||'พนักงาน';if(!m[id])m[id]={id,name,work:0,off:0,leave:0,totalMinutes:0,otMinutes:0,advance:0,first:r.work_date,last:r.work_date};const x=m[id];x.first=x.first<r.work_date?x.first:r.work_date;x.last=x.last>r.work_date?x.last:r.work_date;x.advance+=Number(r.advance_amount||0);if(r.status==='work'){const mins=workedMinutesRec(r);if(mins>0){x.work+=Math.round((mins/480)*2)/2;x.totalMinutes+=mins;x.otMinutes+=Math.max(0,mins-480)}}else if(r.status==='off')x.off++;else if(r.status==='leave')x.leave++;}
   lastHistorySummary=Object.values(m).sort((x,y)=>y.work-x.work||x.off-y.off);
