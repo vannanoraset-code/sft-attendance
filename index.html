@@ -288,11 +288,9 @@ function renderDaily(){
     `<div class="metric"><span>ลา</span><b>${leave}</b></div>`+
     `<div class="metric"><span>เงินเบิกวันนี้</span><b>${fmtMoney(adv)}</b></div>`;
   
-  const saved=ranked.filter(e=>{
-    const r=recFor(e.id);
-
-    return r.status==='work' && workedMinutesRec(r)>0;
-  });
+  // แสดงพนักงานที่มีสถานะทำงานทุกคน แม้ข้อมูลเวลาเก่าของวันนั้นยังว่าง
+  // เพื่อให้ข้อมูลย้อนหลังยังมองเห็นและสามารถเปิดแก้ไขได้
+  const saved=ranked.filter(e=>recFor(e.id).status==='work');
   const photoWaitList=ranked.filter(e=>recFor(e.id).status==='photo_wait');
   const pendingList=ranked.filter(e=>recFor(e.id).status==='pending');
   const absent=ranked.filter(e=>{
