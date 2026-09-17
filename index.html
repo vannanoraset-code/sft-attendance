@@ -347,15 +347,9 @@ function eveningOutOptions(value=''){return timeRangeOptions(value,'13:30','00:0
 
 function fillNormalWorkTime(card){
   if(!card)return;
-  const defaults={start:'08:00',morningOut:'12:00',afternoonIn:'13:00',end:'17:00'};
-  const fields={
-    start:card.querySelector('.start'),
-    morningOut:card.querySelector('.morning-out'),
-    afternoonIn:card.querySelector('.afternoon-in'),
-    end:card.querySelector('.end')
-  };
+  const defaults={start_time:'08:00',morning_out:'12:00',afternoon_in:'13:00',end_time:'17:00'};
   for(const [field,val] of Object.entries(defaults)){
-    const el=fields[field];
+    const el=card.querySelector(`[data-field="${field}"]`) || card.querySelector(`[name="${field}"]`);
     if(el && !el.value) el.value=val;
   }
 }
@@ -410,10 +404,10 @@ function card(e,i){
         </select>
       </div>
       <div class="field"><label>เงินเบิกวันนี้</label><input class="advance" type="number" min="0" step="1" value="${Number(r.advance_amount||0)}"></div>
-      <div class="field"><label>เข้าเช้า</label><select class="start" ${afternoonOnly?'disabled':''}>${morningStartOptions((isPending||isPhotoWait) ? '' : r.start_time)}</select></div>
-      <div class="field"><label>ออกช่วงเช้า</label><select class="morning-out" ${afternoonOnly?'disabled':''}>${morningOutOptions((isPending||isPhotoWait) ? '' : r.morning_out)}</select></div>
-      <div class="field"><label>เข้าบ่าย</label><select class="afternoon-in">${afternoonInOptions((isPending||isPhotoWait) ? '' : r.afternoon_in)}</select></div>
-      <div class="field"><label>ออกเย็น</label><select class="end">${eveningOutOptions((isPending||isPhotoWait) ? '' : r.end_time)}</select></div>
+      <div class="field"><label>เข้าเช้า</label><select class="start" ${afternoonOnly?'disabled':''}>${morningStartOptions((isPhotoWait||isPending) ? '' : (/^\d{2}:\d{2}/.test(r.start_time||'') ? r.start_time : '08:00'))}</select></div>
+      <div class="field"><label>ออกช่วงเช้า</label><select class="morning-out" ${afternoonOnly?'disabled':''}>${morningOutOptions((isPhotoWait||isPending) ? '' : (/^\d{2}:\d{2}/.test(r.morning_out||'') ? r.morning_out : '12:00'))}</select></div>
+      <div class="field"><label>เข้าบ่าย</label><select class="afternoon-in">${afternoonInOptions((isPhotoWait||isPending) ? '' : (/^\d{2}:\d{2}/.test(r.afternoon_in||'') ? r.afternoon_in : '13:00'))}</select></div>
+      <div class="field"><label>ออกเย็น</label><select class="end">${eveningOutOptions((isPhotoWait||isPending) ? '' : (/^\d{2}:\d{2}/.test(r.end_time||'') ? r.end_time : '17:00'))}</select></div>
       <div class="field"><label>เวลาคิดจริง</label><div><b>${(isPending||isPhotoWait)?'ยังไม่ลงเวลา':dayWorkText(r)}</b></div></div>
     </div>
     <div class="actions"><button type="button" class="btn save-one" data-id="${e.id}">💾 บันทึกคนนี้</button><button type="button" class="btn soft reset-one" data-id="${e.id}">↺ รีเซ็ตคนนี้</button></div>
@@ -517,11 +511,14 @@ function bindDailyCards(){
       x.addEventListener('input',()=>markDirty(el));
     });
 
-    // เมื่อเลือก "ทำงาน" ให้เวลาเริ่มต้นเฉพาะการ์ดนี้เป็น 08:00 / 12:00 / 13:00 / 17:00
+    // ถ้าผู้ใช้เลือก "ทำงาน" ให้ช่องเวลาเปิดและเติมเวลามาตรฐานเฉพาะการ์ดนี้
     status.addEventListener('change',()=>{
       if(status.value==='work'){
         start.disabled=false; mo.disabled=false; ai.disabled=false; el.querySelector('.end').disabled=false;
-        fillNormalWorkTime(el);
+        if(!start.value) start.value='08:00';
+        if(!mo.value) mo.value='12:00';
+        if(!ai.value) ai.value='13:00';
+        const end=el.querySelector('.end'); if(end && !end.value) end.value='17:00';
       }
       refreshControls();
     });
