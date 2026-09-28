@@ -501,10 +501,12 @@ function markDirty(){
     const el=card.querySelector(selector);
     if(el && !el.value) el.value=val;
   };
-  setBlank('select[data-field="start_time"],select[name="start_time"]','08:00');
-  setBlank('select[data-field="morning_out"],select[name="morning_out"]','12:00');
-  setBlank('select[data-field="afternoon_in"],select[name="afternoon_in"]','13:00');
-  setBlank('select[data-field="end_time"],select[name="end_time"]','17:00');
+  // ช่องเวลาของการ์ดจริงใช้ class .start / .morning-out / .afternoon-in / .end
+  // เมื่อเลือกสถานะ "ทำงาน" ให้เติมเวลาปกติอัตโนมัติทันที
+  setBlank('select.start','08:00');
+  setBlank('select.morning-out','12:00');
+  setBlank('select.afternoon-in','13:00');
+  setBlank('select.end','17:00');
 }
 
 
