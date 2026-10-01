@@ -114,7 +114,15 @@ function attendanceCycleStart(dateStr){
   const start=new Date(y,m,day>=16?16:1);
   return start.toISOString().slice(0,10);
 }
-function advanceCycleStart(dateStr){return attendanceCycleStart(dateStr)}
+function advanceCycleStart(dateStr){
+  // รอบเงินเบิกสะสมรีเซ็ตทุกวันที่ 10 และ 25 ของทุกเดือน
+  // รอบ 10–24: เริ่มนับใหม่วันที่ 10
+  // รอบ 25–9: เริ่มนับใหม่วันที่ 25 ของเดือนปัจจุบัน/เดือนก่อนหน้า
+  const d=new Date(dateStr+'T00:00:00');
+  const y=d.getFullYear(),m=d.getMonth(),day=d.getDate();
+  const start = day>=25 ? new Date(y,m,25) : day>=10 ? new Date(y,m,10) : new Date(y,m-1,25);
+  return start.toISOString().slice(0,10);
+}
 function minutesBetween(start,end){if(!start||!end)return 0;const [sh,sm]=String(start).slice(0,5).split(':').map(Number),[eh,em]=String(end).slice(0,5).split(':').map(Number);if([sh,sm,eh,em].some(Number.isNaN))return 0;let mins=(eh*60+em)-(sh*60+sm);if(mins<0)mins+=24*60;return Math.max(0,mins)}
 function normalizePunches(r){
   if(!r)return r;
@@ -486,27 +494,9 @@ function markDirtyOriginal(el){
 }
 
 function markDirty(){
+  // ทำหน้าที่แค่เปลี่ยนสถานะเป็น "ยังไม่ได้บันทึก"
+  // ห้ามเติมเวลาอัตโนมัติที่นี่ เพราะผู้ใช้ต้องสามารถล้างช่องเวลาเป็น --:-- ได้
   markDirtyOriginal.apply(this,arguments);
-
-  // เติมเวลาปกติทันทีเมื่อสถานะของการ์ดนี้เป็น "ทำงาน"
-  const srcEl=(arguments[0] && arguments[0].target) ? arguments[0].target :
-              (arguments[0] && arguments[0].nodeType===1 ? arguments[0] : document.activeElement);
-  const card=(srcEl && srcEl.closest) ? (srcEl.closest('.emp') || srcEl.closest('.card') || srcEl.closest('[data-employee-id]') || srcEl.closest('[data-id]')) : null;
-  if(!card) return;
-
-  const status=card.querySelector('select[data-field="status"], select.status, select[name="status"]');
-  if(!status || status.value!=='work') return;
-
-  const setBlank=(selector,val)=>{
-    const el=card.querySelector(selector);
-    if(el && !el.value) el.value=val;
-  };
-  // ช่องเวลาของการ์ดจริงใช้ class .start / .morning-out / .afternoon-in / .end
-  // เมื่อเลือกสถานะ "ทำงาน" ให้เติมเวลาปกติอัตโนมัติทันที
-  setBlank('select.start','08:00');
-  setBlank('select.morning-out','12:00');
-  setBlank('select.afternoon-in','13:00');
-  setBlank('select.end','17:00');
 }
 
 
@@ -541,12 +531,18 @@ function bindDailyCards(){
       x.addEventListener('input',()=>markDirty(el));
     });
 
-    // ถ้าผู้ใช้เลือก "ทำงาน" ให้ช่องเวลาเปิด แต่ไม่เติมเวลาให้อัตโนมัติ
+    // เมื่อเปลี่ยนสถานะเป็น "ทำงาน" ให้เติมเวลาปกติครั้งเดียว
+    // หลังจากนั้นผู้ใช้สามารถแก้/ล้างช่องใดก็ได้เป็น --:-- โดยจะไม่ถูกเติมกลับเอง
     status.addEventListener('change',()=>{
       if(status.value==='work'){
         start.disabled=false; mo.disabled=false; ai.disabled=false; el.querySelector('.end').disabled=false;
+        if(!start.value) start.value='08:00';
+        if(!mo.value) mo.value='12:00';
+        if(!ai.value) ai.value='13:00';
+        if(!el.querySelector('.end').value) el.querySelector('.end').value='17:00';
       }
       refreshControls();
+      markDirty(el);
     });
 
     const btn=el.querySelector('.save-one');
