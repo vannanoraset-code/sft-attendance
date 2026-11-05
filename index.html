@@ -928,7 +928,7 @@ async function exportDailyImage(){
     }catch(e){reject(e)}
   });
 
-  const fileName=`SF&T-${date}.png`;
+  const fileName=`${date}.png`;
   try{
     const file=new File([blob],fileName,{type:'image/png'});
     if(navigator.share && navigator.canShare && navigator.canShare({files:[file]})){
@@ -1004,7 +1004,7 @@ async function loadHistory(){try{
 async function exportHistorySummaryImage(){
   if(!lastHistorySummary.length)await loadHistory();if(!lastHistorySummary.length){alert('ไม่พบข้อมูลสำหรับส่งออก');return}
   const a=$('#historyFrom').value,b=$('#historyTo').value,W=1200,rowH=150,H=150+lastHistorySummary.length*rowH+50,c=document.createElement('canvas');c.width=W;c.height=H;const x=c.getContext('2d');x.fillStyle='#eef3f8';x.fillRect(0,0,W,H);x.fillStyle='#0f2f55';x.fillRect(0,0,W,120);x.fillStyle='#fff';x.font='800 34px sans-serif';x.fillText('สรุปประวัติพนักงาน SF&T',40,50);x.font='22px sans-serif';x.fillText(`${a} ถึง ${b}`,40,88);let y=145;lastHistorySummary.forEach((r,i)=>{const st=employeeHistoryStatus(r);x.fillStyle='#fff';x.fillRect(25,y-10,W-50,rowH-8);x.fillStyle='#152238';x.font='800 25px sans-serif';x.fillText(`${i+1}. ${r.name}`,45,y+25);x.font='20px sans-serif';x.fillText(`ทำงาน ${formatHalf(r.totalMinutes/480)} วัน   OT ${formatHalf(r.otMinutes/60)} ชม.   หยุด ${r.off}   ลา ${r.leave}`,45,y+60);x.fillText(`เบิกสะสม ${fmtMoney(r.advance)}   มีประวัติ ${r.first} ถึง ${r.last}`,45,y+92);x.font='800 20px sans-serif';x.fillText(`สถานะ: ${st.label}`,820,y+40);y+=rowH});
-  const blob=await new Promise(res=>c.toBlob(res,'image/png',0.95));if(!blob){alert('สร้างรูปไม่สำเร็จ');return}const file=new File([blob],`SFT_History_${a}_${b}.png`,{type:'image/png'});if(navigator.share&&navigator.canShare?.({files:[file]})){await navigator.share({files:[file],title:'สรุปประวัติพนักงาน SF&T'})}else{const u=URL.createObjectURL(blob),link=document.createElement('a');link.href=u;link.download=file.name;link.click();setTimeout(()=>URL.revokeObjectURL(u),2000)}
+  const blob=await new Promise(res=>c.toBlob(res,'image/png',0.95));if(!blob){alert('สร้างรูปไม่สำเร็จ');return}const file=new File([blob],(a===b?`${a}.png`:`${a}_${b}.png`),{type:'image/png'});if(navigator.share&&navigator.canShare?.({files:[file]})){await navigator.share({files:[file],title:'สรุปประวัติพนักงาน SF&T'})}else{const u=URL.createObjectURL(blob),link=document.createElement('a');link.href=u;link.download=file.name;link.click();setTimeout(()=>URL.revokeObjectURL(u),2000)}
 }
 $('#loadHistory').addEventListener('click',loadHistory);
 $('#exportHistorySummary').addEventListener('click',exportHistorySummaryImage);
