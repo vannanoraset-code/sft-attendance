@@ -966,14 +966,60 @@ $('#cancelModal').addEventListener('click',closeModal);function closeModal(){$('
 $('#empPhoto').addEventListener('change',async e=>{const f=e.target.files[0];if(!f)return;const data=await resizeImage(f,520,0.78);$('#photoPreview').src=data});
 function resizeImage(file,maxW,q){return new Promise((resolve,reject)=>{const fr=new FileReader();fr.onload=()=>{const img=new Image();img.onload=()=>{const scale=Math.min(1,maxW/img.width),c=document.createElement('canvas');c.width=Math.round(img.width*scale);c.height=Math.round(img.height*scale);c.getContext('2d').drawImage(img,0,0,c.width,c.height);resolve(c.toDataURL('image/jpeg',q))};img.onerror=reject;img.src=fr.result};fr.onerror=reject;fr.readAsDataURL(file)})}
 $('#employeeForm').addEventListener('submit',async e=>{e.preventDefault();const id=$('#empId').value,name=$('#empName').value.trim();if(!name)return;const body={name,full_name:$('#empFullName').value.trim(),photo_url:$('#photoPreview').src||null,is_active:true,sort_seed:employees.length?Math.max(...employees.map(x=>x.sort_seed||0))+1:1};try{if(!id){const start=prompt('วันที่เริ่มงาน (ปี-เดือน-วัน)',bangkokToday())?.trim();if(!start)return;if(!/^\d{4}-\d{2}-\d{2}$/.test(start)||start>bangkokToday()){alert('กรุณาตรวจวันที่เริ่มงาน');return;}body.employment_started_on=start;}if(id)await api('sft_attendance_employees?id=eq.'+id,{method:'PATCH',headers:{'Prefer':'return=minimal'},body:JSON.stringify(body)});else await api('sft_attendance_employees',{method:'POST',headers:{'Prefer':'return=minimal'},body:JSON.stringify(body)});closeModal();await loadDaily()}catch(err){alert('บันทึกพนักงานไม่สำเร็จ');console.error(err)}});
+const managerBase='https://natrgwdgnjgqzupknjsv.supabase.co';
+const managerPublicKey='sb_publishable_7tVvrwuHqH32C3zzOrRcTA_Ex5DuG6J';
+let managerToken='';
+async function managerRequest(method,body){
+  if(!managerToken)throw new Error('กรุณาเข้าสู่ระบบผู้จัดการ');
+  const res=await fetch(managerBase+'/functions/v1/sft-employment-manager',{
+    method,headers:{Authorization:'Bearer '+managerToken,'Content-Type':'application/json'},
+    body:body?JSON.stringify(body):undefined
+  });
+  if(res.status===401)managerToken='';
+  if(!res.ok)throw new Error(res.status===403?'บัญชีนี้ไม่มีสิทธิ์จัดการพนักงาน':res.status===401?'กรุณาเข้าสู่ระบบผู้จัดการอีกครั้ง':'ตรวจวันที่และสถานะพนักงาน');
+  return res.json();
+}
+function managerSignIn(){
+  if(document.querySelector('#managerLogin'))return;
+  const dialog=document.createElement('dialog');
+  dialog.id='managerLogin';
+  dialog.innerHTML='<form><h3>เข้าสู่ระบบผู้จัดการพนักงาน</h3><label>อีเมล <input type="email" name="email" autocomplete="username" required></label><br><label>รหัสผ่าน <input type="password" name="password" autocomplete="current-password" required></label><p role="alert"></p><button class="btn primary">เข้าสู่ระบบ</button> <button class="btn soft" type="button">ยกเลิก</button></form>';
+  const form=dialog.querySelector('form');
+  form.querySelector('[type=button]').onclick=()=>dialog.close();
+  dialog.onclose=()=>dialog.remove();
+  form.onsubmit=async event=>{
+    event.preventDefault();
+    const button=form.querySelector('button');
+    button.disabled=true;
+    try{
+      const fields=new FormData(form);
+      const response=await fetch(managerBase+'/auth/v1/token?grant_type=password',{
+        method:'POST',headers:{apikey:managerPublicKey,'Content-Type':'application/json'},
+        body:JSON.stringify({email:fields.get('email'),password:fields.get('password')})
+      });
+      if(!response.ok)throw new Error('ตรวจอีเมลและรหัสผ่านค่ะ');
+      managerToken=(await response.json()).access_token;
+      await managerRequest('GET');
+      dialog.close();
+      await renderFormerEmployees();
+    }catch(error){
+      managerToken='';
+      form.querySelector('[role=alert]').textContent=error.message;
+    }finally{button.disabled=false;}
+  };
+  document.body.append(dialog);
+  dialog.showModal();
+}
+
 function bangkokToday(){return new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Bangkok',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());}
 async function changeEmployment(id,active){
+  if(!managerToken){managerSignIn();return;}
   if(hasUnsavedDrafts()){alert('บันทึกข้อมูลลงเวลาก่อนค่ะ');return;}
   const date=prompt(active?'วันที่เริ่มงานใหม่ (ปี-เดือน-วัน)':'วันที่ทำงานวันสุดท้าย (ปี-เดือน-วัน)',bangkokToday())?.trim();
   if(!date)return;
   if(!/^\d{4}-\d{2}-\d{2}$/.test(date)){alert('กรอกวันที่ในรูปแบบ ปี-เดือน-วัน');return;}
   try{
-    await edge('action=employment-change',{method:'POST',body:JSON.stringify({id,active,date})});
+    await managerRequest('POST',{id,active,date});
     await loadDaily();
     sync(active?'รับกลับแล้ว ✓':'บันทึกวันออกแล้ว ✓');
   }catch(err){console.error(err);alert('ดำเนินการไม่ได้ กรุณาตรวจวันที่และประวัติลงเวลาล่าสุด');}
@@ -982,7 +1028,12 @@ function removeEmployee(id){return changeEmployment(id,false);}
 async function renderFormerEmployees(){
   const list=$('#formerEmployees');
   try{
-    const {rows=[]}=await edge('action=former-employees');
+    if(!managerToken){
+      const button=document.createElement('button');
+      button.type='button';button.className='btn primary';button.textContent='เข้าสู่ระบบผู้จัดการ';
+      button.onclick=managerSignIn;list.replaceChildren(button);return;
+    }
+    const {rows=[]}=await managerRequest('GET');
     list.replaceChildren();
     if(!rows.length)list.textContent='ยังไม่มีพนักงานที่ออก';
     for(const employee of rows){
