@@ -24,7 +24,7 @@ main{padding:12px;max-width:1180px;margin:auto}.panel{background:#fff;border-rad
   .save-state{font-size:14px;font-weight:700;color:#64748b;margin-top:8px}
   .save-state.dirty{color:#b45309}
   .save-state.saved{color:#15803d}
-  #saveAll,#applyBulk,#bulkShift{display:none!important}
+  #applyBulk,#bulkShift{display:none!important}
 </style>
 
 
@@ -621,35 +621,34 @@ async function resetOneEmployee(el,btn){
   }catch(err){console.error(err);btn.disabled=false;btn.textContent=old;sync('รีเซ็ตไม่สำเร็จ',false);alert('รีเซ็ตไม่สำเร็จ กรุณาลองอีกครั้ง');}
 }
 
+let bulkSaving=false;
 async function saveAllData(){
-  // เวอร์ชันนี้ใช้การบันทึกทีละคนเป็นหลัก
-  // ฟังก์ชันนี้จะไม่สร้างรายการใหม่ให้คนที่ยัง "รอกรอกข้อมูล"
-  sync('กำลังบันทึกข้อมูลที่ยืนยันแล้ว…');
-  const d=$('#workDate').value,site=$('#site').value.trim();
-  const payload=records
-    .filter(r=>r.status==='work'||r.status==='off'||r.status==='leave')
-    .map(r0=>{
-      const r=normalizePunches({...r0});
-      return{
-        employee_id:r.employee_id,work_date:d,site,status:r.status,
-        start_time:r.status==='work'?(r.start_time||null):null,
-        morning_out:r.status==='work'?(r.morning_out||null):null,
-        afternoon_in:r.status==='work'?(r.afternoon_in||null):null,
-        end_time:r.status==='work'?(r.end_time||null):null,
-        advance_amount:Number(r.advance_amount||0),note:r.note||''
-      };
-    });
-  if(payload.length){
-    await api('sft_attendance_records?on_conflict=employee_id,work_date',{
-      method:'POST',
-      headers:{'Prefer':'resolution=merge-duplicates,return=minimal'},
-      body:JSON.stringify(payload)
-    });
+  if(bulkSaving)return;
+  const cards=[...document.querySelectorAll('.emp')].filter(el=>el.querySelector('.save-state.dirty'));
+  if(!cards.length){alert('ไม่มีข้อมูลใหม่ที่ต้องบันทึก');return;}
+  const d=$('#workDate').value,site=$('#site').value.trim(),invalid=[],payload=[];
+  for(const el of cards){
+    const r=readCardDraft(el),name=employees.find(e=>e.id===r.employee_id)?.name||String(r.employee_id);
+    if((r.status==='pending'&&r.advance_amount<=0)||(r.status==='work'&&workedMinutesRec(r)<=0)||!Number.isFinite(r.advance_amount)||r.advance_amount<0){invalid.push(name);continue;}
+    payload.push({employee_id:r.employee_id,work_date:d,site,status:r.status==='photo_wait'?'pending':r.status,
+      start_time:r.status==='work'?(r.start_time||null):null,morning_out:r.status==='work'?(r.morning_out||null):null,
+      afternoon_in:r.status==='work'?(r.afternoon_in||null):null,end_time:r.status==='work'?(r.end_time||null):null,
+      advance_amount:r.advance_amount,note:r.status==='photo_wait'?'__PHOTO_WAIT__':(recFor(r.employee_id).note==='__PHOTO_WAIT__'?'':recFor(r.employee_id).note||'')});
   }
-  await loadDaily();
-  return true;
+  if(invalid.length){alert('ยังไม่ได้บันทึก กรุณาตรวจสถานะ เวลา หรือเงินเบิกของ: '+invalid.join(', '));return;}
+  bulkSaving=true;
+  const controls=[...document.querySelectorAll('button,input,select')].map(el=>({el,disabled:el.disabled}));
+  controls.forEach(({el})=>el.disabled=true);
+  sync('กำลังบันทึก '+payload.length+' คน…');
+  try{
+    await api('sft_attendance_records?on_conflict=employee_id,work_date',{method:'POST',headers:{Prefer:'resolution=merge-duplicates,return=minimal'},body:JSON.stringify(payload)});
+    for(const p of payload){const i=records.findIndex(r=>r.employee_id===p.employee_id);if(i<0)records.push(p);else records[i]={...records[i],...p};}
+    cards.forEach(el=>{const state=el.querySelector('.save-state');state.classList.remove('dirty');state.classList.add('saved');state.textContent='บันทึกแล้ว ✓';});
+    sync('บันทึกสำเร็จ '+payload.length+' คน ✓');alert('บันทึกสำเร็จ '+payload.length+' คน');
+  }catch(err){console.error(err);sync('ยังยืนยันการบันทึกไม่ได้ ข้อมูลที่กรอกยังอยู่',false);alert('ยังยืนยันการบันทึกไม่ได้ ข้อมูลที่กรอกยังอยู่ กรุณากดบันทึกทั้งหมดเพื่อลองใหม่');}
+  finally{controls.forEach(({el,disabled})=>el.disabled=disabled);bulkSaving=false;}
 }
-$('#saveAll').addEventListener('click',()=>alert('เวอร์ชันนี้ให้กด “บันทึกคนนี้” ทีละคน เพื่อป้องกันข้อมูลผิดพลาด'));
+$('#saveAll').addEventListener('click',saveAllData);
 function thaiDateLong(dateStr){const d=new Date(dateStr+'T00:00:00');return d.toLocaleDateString('th-TH',{day:'2-digit',month:'2-digit',year:'numeric'})}
 function exportShiftColor(r){if(r.status==='photo_wait')return '#0ea5e9';if(r.status==='pending')return '#64748b';if(r.status==='off')return '#e50914';if(r.status==='leave')return '#d9a700';const e=(r.end_time||'17:00').slice(0,5);return e==='17:00'?'#139c43':e==='18:00'?'#48a9df':e==='19:00'?'#0b82ec':e==='20:00'?'#7d45b5':e==='21:00'?'#ef8b13':'#c62828'}
 function roundRect(ctx,x,y,w,h,r,fill,stroke){ctx.beginPath();ctx.roundRect(x,y,w,h,r);if(fill){ctx.fillStyle=fill;ctx.fill()}if(stroke){ctx.strokeStyle=stroke;ctx.lineWidth=2;ctx.stroke()}}
@@ -1013,7 +1012,7 @@ function hasUnsavedDrafts(){
   return !!document.querySelector('.save-state.dirty');
 }
 async function safeAutoRefresh(){
-  if(document.hidden || hasUnsavedDrafts()) return;
+  if(bulkSaving || document.hidden || hasUnsavedDrafts()) return;
   const active=document.activeElement;
   if(active && active.closest && active.closest('#employeeList')) return;
   await loadDaily();
