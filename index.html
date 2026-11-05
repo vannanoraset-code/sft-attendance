@@ -49,11 +49,11 @@ main{padding:12px;max-width:1180px;margin:auto}.panel{background:#fff;border-rad
     <div class="grid3">
       <div class="field"><label>วันที่</label><input id="workDate" type="date" value="2026-09-01"></div>
       <div class="field"><label>สถานที่ทำงาน</label><select id="site"></select></div>
-      <div class="field"><label for="bulkShift">เวลาเลิกงานของไซต์</label><select id="bulkShift"></select></div>
+      <div class="field"><label for="bulkStart">เวลาเข้างานของไซต์</label><select id="bulkStart"></select></div><div class="field"><label for="bulkShift">เวลาเลิกงานของไซต์</label><select id="bulkShift"></select></div>
     </div>
-    <div class="actions"><button id="applyBulk" class="btn soft">ใช้เวลาเลิกงานนี้ทั้งไซต์</button><button id="saveAll" class="btn primary">บันทึกทั้งไซต์</button><button id="exportDaily" class="btn success">📷 ส่งออกสรุปเป็นรูป</button></div>
+    <div class="actions"><button id="applyBulk" class="btn soft">ตั้งเวลาเข้า–เลิกของไซต์</button><button id="saveAll" class="btn primary">บันทึกทั้งไซต์</button><button id="exportDaily" class="btn success">📷 ส่งออกสรุปเป็นรูป</button></div>
   </div>
-  <div class="panel"><div class="actions"><button id="normalSite" class="btn soft">ใส่เวลาปกติทั้งไซต์</button><button id="newSite" class="btn soft">+ เพิ่มไซต์</button></div><details><summary>จัดคนเข้าทีม / ย้ายไซต์</summary><p>การจัดทีมใช้ร่วมทุกเครื่อง ประวัติวันเดิมยังคงอยู่ไซต์เดิม</p><div id="siteTeam"></div></details><p id="siteHint"></p></div><div id="summary" class="summary panel"></div>
+  <div class="panel"><div class="actions"><button id="newSite" class="btn soft">+ เพิ่มไซต์</button></div><details><summary>จัดคนเข้าทีม / ย้ายไซต์</summary><p>การจัดทีมใช้ร่วมทุกเครื่อง ประวัติวันเดิมยังคงอยู่ไซต์เดิม</p><div id="siteTeam"></div></details><p id="siteHint"></p></div><div id="summary" class="summary panel"></div>
   <div id="employeeList" class="employee-list"></div>
 </section>
 <section id="employeesView" class="hide">
@@ -501,7 +501,7 @@ function markDirty(){
 
 
 function bindDailyCards(){
-  document.querySelectorAll('.emp').forEach(el=>{
+  document.querySelectorAll('#employeeList .emp').forEach(el=>{
     const start=el.querySelector('.start');
     const mo=el.querySelector('.morning-out');
     const ai=el.querySelector('.afternoon-in');
@@ -536,10 +536,10 @@ function bindDailyCards(){
     status.addEventListener('change',()=>{
       if(status.value==='work'){
         start.disabled=false; mo.disabled=false; ai.disabled=false; el.querySelector('.end').disabled=false;
-        if(!start.value) start.value='08:00';
+        if(!start.value) start.value=siteHours().start;
         if(!mo.value) mo.value='12:00';
         if(!ai.value) ai.value='13:00';
-        if(!el.querySelector('.end').value) el.querySelector('.end').value='17:00';
+        if(!el.querySelector('.end').value) el.querySelector('.end').value=siteHours().end;
       }
       refreshControls();
       markDirty(el);
@@ -1086,7 +1086,7 @@ async function readSites(){
   siteNames=rows.map(r=>r.name);
   const select=$('#site'),wanted=shownSite||localStorage.getItem('sft.attendance.site');
   select.replaceChildren(...siteNames.map(name=>new Option(name,name)));
-  select.value=siteNames.includes(wanted)?wanted:firstSite;shownSite=select.value;
+  select.value=siteNames.includes(wanted)?wanted:firstSite;shownSite=select.value;showSiteHours();
 }
 const loadDailyBeforeSites=loadDaily;
 loadDaily=async function(){
@@ -1096,7 +1096,7 @@ loadDaily=async function(){
 };
 $('#site').addEventListener('change',()=>{
   if(bulkSaving||hasUnsavedDrafts()){$('#site').value=shownSite;alert('บันทึกข้อมูลที่กรอกก่อนเปลี่ยนไซต์');return;}
-  shownSite=$('#site').value;localStorage.setItem('sft.attendance.site',shownSite);renderDaily();renderSiteInfo();
+  shownSite=$('#site').value;localStorage.setItem('sft.attendance.site',shownSite);showSiteHours();renderDaily();renderSiteInfo();
 });
 $('#workDate').addEventListener('change',e=>{
   if(hasUnsavedDrafts()){e.stopImmediatePropagation();e.target.value=shownDate;alert('บันทึกข้อมูลที่กรอกก่อนเปลี่ยนวันที่');}
@@ -1107,35 +1107,21 @@ $('#newSite').addEventListener('click',async()=>{
   try{await edge('action=add-site',{method:'POST',body:JSON.stringify({name})});shownSite=name;localStorage.setItem('sft.attendance.site',name);await loadDaily();}
   catch(err){alert('เพิ่มไซต์ไม่สำเร็จ');}
 });
-$('#normalSite').addEventListener('click',()=>{
-  let n=0;
-  for(const el of $('#employeeList').querySelectorAll('.emp')){
-    const status=el.querySelector('.status');
-    if(status.value!=='pending'||el.querySelector('.save-state.dirty'))continue;
-    status.value='work';
-    for(const [sel,value] of [['.start','08:00'],['.morning-out','12:00'],['.afternoon-in','13:00'],['.end','17:00']])el.querySelector(sel).value=value;
-    status.dispatchEvent(new Event('change',{bubbles:true}));n++;
-  }
-  sync(n?'ใส่เวลาปกติ '+n+' คน • ตรวจแล้วกดบันทึกทั้งไซต์':'ไม่มีคนรอกรอกเวลาในไซต์นี้');
-});
-$('#bulkShift').innerHTML=eveningOutOptions('17:00');
+function siteHoursKey(){return 'sft.attendance.hours.'+$('#site').value;}
+function siteHours(){
+  try{return JSON.parse(localStorage.getItem(siteHoursKey()))||{start:'08:00',end:'17:00'};}
+  catch{return {start:'08:00',end:'17:00'};}
+}
+function showSiteHours(){
+  const hours=siteHours();
+  $('#bulkStart').innerHTML=morningStartOptions(hours.start);
+  $('#bulkShift').innerHTML=eveningOutOptions(hours.end);
+}
 $('#applyBulk').addEventListener('click',()=>{
-  const endTime=$('#bulkShift').value;
-  if(!endTime){alert('เลือกเวลาเลิกงานก่อนค่ะ');return;}
-  let count=0;
-  for(const employeeCard of $('#employeeList').querySelectorAll('.emp')){
-    const status=employeeCard.querySelector('.status');
-    const end=employeeCard.querySelector('.end');
-    if(status.value==='pending'&&!employeeCard.querySelector('.save-state.dirty')){
-      status.value='work';
-      status.dispatchEvent(new Event('change',{bubbles:true}));
-    }
-    if(status.value!=='work'||!end||end.value===endTime)continue;
-    end.value=endTime;
-    end.dispatchEvent(new Event('change',{bubbles:true}));
-    count++;
-  }
-  sync(count?'ปรับเวลาเลิกงาน '+count+' คน • ตรวจแล้วกดบันทึกทั้งไซต์':'ตรวจเวลาแล้วกดบันทึกทั้งไซต์');
+  const start=$('#bulkStart').value,end=$('#bulkShift').value;
+  if(!$('#site').value||!start||!end){alert('เลือกไซต์ เวลาเข้า และเวลาเลิกก่อนค่ะ');return;}
+  localStorage.setItem(siteHoursKey(),JSON.stringify({start,end}));
+  sync('ตั้งเวลาไซต์ '+start+'–'+end+' แล้ว • เลือกสถานะทำงานเพื่อเติมเวลา');
 });
 restoreLastWorkDate();
 loadDaily();
