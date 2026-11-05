@@ -236,6 +236,15 @@ async function loadDaily(){
       return created || hadHistory;
     });
 
+    if(d==='2026-11-03'){
+      const previous=await api('sft_attendance_records?select=*,sft_attendance_employees(name)&work_date=gte.2026-11-02&work_date=lte.2026-11-02');
+      for(const row of previous){
+        const id=Number(row.employee_id), name=row.sft_attendance_employees?.name;
+        if((id===3||id===12)&&name&&!employees.some(e=>Number(e.id)===id)){
+          employees.push({id,name,default_site:row.site,attendanceOnly:true});
+        }
+      }
+    }
     await loadStats();
     records=await api('sft_attendance_records?select=*&work_date=eq.'+d);
     renderDaily();
@@ -959,7 +968,7 @@ async function exportDailyImage(){
 }
 $('#exportDaily').addEventListener('click',exportDailyImage);
 $('#workDate').addEventListener('change',()=>{rememberWorkDate();loadDaily()});
-function renderManage(){const ranked=rankEmployees();$('#manageList').innerHTML=ranked.map((e,i)=>`<article class="emp"><div class="emp-top"><img src="${(e.photo_url&&EMBEDDED_PHOTOS[e.photo_url])||e.photo_url||''}"><div><h3><span class="rank">${i+1}</span>${e.name}</h3><div class="muted">${e.full_name||''}</div><div class="actions"><button class="btn soft edit" data-id="${e.id}">แก้ไข</button><button class="btn danger del" data-id="${e.id}">บันทึกวันออก</button></div></div></div></article>`).join('');$$('.edit').forEach(b=>b.addEventListener('click',()=>openEdit(Number(b.dataset.id))));$$('.del').forEach(b=>b.addEventListener('click',()=>removeEmployee(Number(b.dataset.id))))}
+function renderManage(){const ranked=rankEmployees().filter(e=>!e.attendanceOnly);$('#manageList').innerHTML=ranked.map((e,i)=>`<article class="emp"><div class="emp-top"><img src="${(e.photo_url&&EMBEDDED_PHOTOS[e.photo_url])||e.photo_url||''}"><div><h3><span class="rank">${i+1}</span>${e.name}</h3><div class="muted">${e.full_name||''}</div><div class="actions"><button class="btn soft edit" data-id="${e.id}">แก้ไข</button><button class="btn danger del" data-id="${e.id}">บันทึกวันออก</button></div></div></div></article>`).join('');$$('.edit').forEach(b=>b.addEventListener('click',()=>openEdit(Number(b.dataset.id))));$$('.del').forEach(b=>b.addEventListener('click',()=>removeEmployee(Number(b.dataset.id))))}
 $('#addEmployee').addEventListener('click',()=>openEdit());
 function openEdit(id){const e=employees.find(x=>x.id===id);$('#empId').value=e?.id||'';$('#empName').value=e?.name||'';$('#empFullName').value=e?.full_name||'';$('#photoPreview').src=(e?.photo_url&&EMBEDDED_PHOTOS[e.photo_url])||e?.photo_url||'';$('#modalTitle').textContent=e?'แก้ไขพนักงาน':'เพิ่มพนักงาน';$('#modal').classList.remove('hide');$('#modal').setAttribute('aria-hidden','false')}
 $('#cancelModal').addEventListener('click',closeModal);function closeModal(){$('#modal').classList.add('hide');$('#modal').setAttribute('aria-hidden','true');$('#employeeForm').reset();$('#photoPreview').src=''}
