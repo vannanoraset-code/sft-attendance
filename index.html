@@ -49,12 +49,12 @@ main{padding:12px;max-width:1180px;margin:auto}.panel{background:#fff;border-rad
   <div class="panel">
     <div class="grid3">
       <div class="field"><label>วันที่</label><input id="workDate" type="date" value="2026-09-01"></div>
-      <div class="field"><label>สถานที่ทำงาน</label><input id="site" value="River Pro – WHA หนองแค สระบุรี"></div>
+      <div class="field"><label>สถานที่ทำงาน</label><select id="site"></select></div>
       <div class="field"><label>ตั้งค่าเวลาหลักทั้งทีม</label><select id="bulkShift"><option value="08:00|17:00">08:00-17:00</option><option value="08:00|18:00">08:00-18:00</option><option value="08:00|19:00">08:00-19:00</option><option value="08:00|20:00">08:00-20:00</option><option value="08:00|21:00">08:00-21:00</option></select></div>
     </div>
-    <div class="actions"><button id="applyBulk" class="btn soft">ใช้เวลานี้กับทุกคน</button><button id="saveAll" class="btn primary">บันทึกทั้งหมด</button><button id="exportDaily" class="btn success">📷 ส่งออกสรุปเป็นรูป</button></div>
+    <div class="actions"><button id="applyBulk" class="btn soft">ใช้เวลานี้กับทุกคน</button><button id="saveAll" class="btn primary">บันทึกทั้งไซต์</button><button id="exportDaily" class="btn success">📷 ส่งออกสรุปเป็นรูป</button></div>
   </div>
-  <div id="summary" class="summary panel"></div>
+  <div class="panel"><div class="actions"><button id="normalSite" class="btn soft">ใส่เวลาปกติทั้งไซต์</button><button id="newSite" class="btn soft">+ เพิ่มไซต์</button></div><details><summary>จัดคนเข้าทีม / ย้ายไซต์</summary><p>การจัดทีมใช้ร่วมทุกเครื่อง ประวัติวันเดิมยังคงอยู่ไซต์เดิม</p><div id="siteTeam"></div></details><p id="siteHint"></p></div><div id="summary" class="summary panel"></div>
   <div id="employeeList" class="employee-list"></div>
 </section>
 <section id="employeesView" class="hide">
@@ -309,13 +309,14 @@ function rankEmployees(){
 }
 
 function renderDaily(){
-  const ranked=rankEmployees();
-  const work=records.filter(r=>r.status==='work').length;
-  const off=records.filter(r=>r.status==='off').length;
-  const leave=records.filter(r=>r.status==='leave').length;
-  const photoWait=employees.filter(e=>recFor(e.id).status==='photo_wait').length;
-  const pending=Math.max(0,employees.length-work-off-leave-photoWait);
-  const adv=records.reduce((sum,r)=>sum+Number(r.advance_amount||0),0);
+  const ranked=siteEmployees();
+  const siteRecords=records.filter(r=>r.site===$('#site').value);
+  const work=siteRecords.filter(r=>r.status==='work').length;
+  const off=siteRecords.filter(r=>r.status==='off').length;
+  const leave=siteRecords.filter(r=>r.status==='leave').length;
+  const photoWait=ranked.filter(e=>recFor(e.id).status==='photo_wait').length;
+  const pending=Math.max(0,ranked.length-work-off-leave-photoWait);
+  const adv=siteRecords.reduce((sum,r)=>sum+Number(r.advance_amount||0),0);
   $('#summary').innerHTML=
     `<div class="metric"><span>ทำงานวันนี้</span><b>${work}</b></div>`+
     `<div class="metric"><span>รอรูปถ่ายยืนยัน</span><b>${photoWait}</b></div>`+
@@ -594,7 +595,11 @@ async function saveOneEmployee(el,btn){
       headers:{'Prefer':'resolution=merge-duplicates,return=minimal'},
       body:JSON.stringify([payload])
     });
-    await loadDaily(); // โหลดสถิติใหม่ แล้วค่อยเรียงอันดับอัตโนมัติหลังบันทึกสำเร็จ
+    const i=records.findIndex(x=>Number(x.employee_id)===payload.employee_id);
+    if(i<0)records.push(payload);else records[i]={...records[i],...payload};
+    const state=el.querySelector('.save-state');state.classList.remove('dirty');state.classList.add('saved');state.textContent='บันทึกแล้ว ✓';
+    btn.disabled=false;btn.textContent=oldText;
+    await loadDaily();renderSiteInfo();
     sync('บันทึกแล้ว ✓');
     requestAnimationFrame(()=>{
       document.querySelector('#employeeList')?.scrollIntoView({behavior:'smooth',block:'start'});
@@ -609,6 +614,7 @@ async function saveOneEmployee(el,btn){
 }
 
 async function resetOneEmployee(el,btn){
+  if([...document.querySelectorAll('.save-state.dirty')].some(x=>!el.contains(x))){alert('บันทึกข้อมูลคนอื่นก่อนรีเซ็ตคนนี้');return;}
   const employeeId=Number(el.dataset.id);
   const d=$('#workDate').value;
   const site=$('#site').value.trim();
@@ -617,7 +623,10 @@ async function resetOneEmployee(el,btn){
   try{
     const payload={employee_id:employeeId,work_date:d,site,status:'pending',start_time:null,morning_out:null,afternoon_in:null,end_time:null,advance_amount:0,note:''};
     await api('sft_attendance_records?on_conflict=employee_id,work_date',{method:'POST',headers:{'Prefer':'resolution=merge-duplicates,return=minimal'},body:JSON.stringify([payload])});
-    await loadDaily(); sync('รีเซ็ตแล้ว ✓');
+    const i=records.findIndex(x=>Number(x.employee_id)===employeeId);
+    if(i<0)records.push(payload);else records[i]={...records[i],...payload};
+    const draft=el.querySelector('.save-state');draft.classList.remove('dirty');
+    await loadDaily();sync('รีเซ็ตแล้ว ✓');
   }catch(err){console.error(err);btn.disabled=false;btn.textContent=old;sync('รีเซ็ตไม่สำเร็จ',false);alert('รีเซ็ตไม่สำเร็จ กรุณาลองอีกครั้ง');}
 }
 
@@ -644,8 +653,8 @@ async function saveAllData(){
     await api('sft_attendance_records?on_conflict=employee_id,work_date',{method:'POST',headers:{Prefer:'resolution=merge-duplicates,return=minimal'},body:JSON.stringify(payload)});
     for(const p of payload){const i=records.findIndex(r=>r.employee_id===p.employee_id);if(i<0)records.push(p);else records[i]={...records[i],...p};}
     cards.forEach(el=>{const state=el.querySelector('.save-state');state.classList.remove('dirty');state.classList.add('saved');state.textContent='บันทึกแล้ว ✓';});
-    sync('บันทึกสำเร็จ '+payload.length+' คน ✓');alert('บันทึกสำเร็จ '+payload.length+' คน');
-  }catch(err){console.error(err);sync('ยังยืนยันการบันทึกไม่ได้ ข้อมูลที่กรอกยังอยู่',false);alert('ยังยืนยันการบันทึกไม่ได้ ข้อมูลที่กรอกยังอยู่ กรุณากดบันทึกทั้งหมดเพื่อลองใหม่');}
+    if(typeof renderSiteInfo==='function')renderSiteInfo();sync('บันทึกสำเร็จ '+payload.length+' คน ✓');alert('บันทึกสำเร็จ '+payload.length+' คน');
+  }catch(err){console.error(err);sync('ยังยืนยันการบันทึกไม่ได้ ข้อมูลที่กรอกยังอยู่',false);alert('ยังยืนยันการบันทึกไม่ได้ ข้อมูลที่กรอกยังอยู่ กรุณากดบันทึกทั้งไซต์เพื่อลองใหม่');}
   finally{controls.forEach(({el,disabled})=>el.disabled=disabled);bulkSaving=false;}
 }
 $('#saveAll').addEventListener('click',saveAllData);
@@ -693,13 +702,13 @@ async function exportDailyImage(){
   try{
   sync('กำลังสร้างรูป…');
 
-  const pendingCount=employees.filter(e=>recFor(e.id).status==='pending').length;
+  const pendingCount=siteEmployees().filter(e=>recFor(e.id).status==='pending').length;
   if(pendingCount>0){
     const ok=confirm(`ยังมีพนักงาน ${pendingCount} คนที่รอกรอกข้อมูล\nต้องการส่งออกรูปโดยแสดงคนเหล่านี้ว่า “รอกรอกข้อมูล” หรือไม่?`);
     if(!ok){sync('ยกเลิกการส่งออก');return}
   }
 
-  const ranked=rankEmployees();
+  const ranked=siteEmployees();
   const date=$('#workDate').value;
   const site=$('#site').value.trim()||'-';
 
@@ -988,11 +997,14 @@ async function loadHistory(){try{
   const rows=await api(`sft_attendance_records?select=*,sft_attendance_employees(name,created_at)&work_date=gte.${a}&work_date=lte.${b}&order=work_date.desc`);
   $('#historyBody').innerHTML=(rows||[]).map(r=>`<tr><td>${r.work_date}</td><td>${r.sft_attendance_employees?.name||employees.find(e=>e.id===r.employee_id)?.name||''}</td><td><span class="pill ${r.status}">${r.status==='work'?'ทำงาน':r.status==='off'?'หยุด':'ลา'}</span></td><td>${r.status==='work'?time4Text(r):'-'}</td><td>${r.site||''}</td><td>${fmtMoney(r.advance_amount)}</td><td><button class="btn soft history-edit" data-date="${r.work_date}" data-emp="${r.employee_id}">แก้ไข</button></td></tr>`).join('');
   $$('.history-edit').forEach(btn=>btn.addEventListener('click',async()=>{
+    if(hasUnsavedDrafts()){alert('บันทึกข้อมูลที่กรอกก่อนเปิดประวัติ');return;}
     const date=btn.dataset.date, empId=Number(btn.dataset.emp);
     $('#workDate').value=date; rememberWorkDate();
     $$('.tab').forEach(x=>x.classList.toggle('active',x.dataset.tab==='daily'));
     $('#dailyView').classList.remove('hide'); $('#employeesView').classList.add('hide'); $('#historyView').classList.add('hide');
     await loadDaily();
+    const targetSite=records.find(r=>Number(r.employee_id)===empId)?.site;
+    if(siteNames.includes(targetSite)){shownSite=targetSite;$('#site').value=targetSite;renderDaily();renderSiteInfo();}
     const card=document.querySelector(`.emp[data-id="${empId}"]`); if(card) card.scrollIntoView({behavior:'smooth',block:'center'});
   }));
   const m={};
@@ -1044,6 +1056,68 @@ document.addEventListener('change',(ev)=>{
 
   const state=card.querySelector('.save-state');
   if(state){state.classList.add('dirty');state.textContent='ยังไม่ได้บันทึก';}
+});
+
+const firstSite='River Pro – WHA หนองแค สระบุรี';
+let siteNames=[],shownSite='',shownDate='';
+function employeeSite(e){return records.find(r=>Number(r.employee_id)===Number(e.id))?.site||e.default_site||firstSite;}
+function siteEmployees(){return rankEmployees().filter(e=>employeeSite(e)===$('#site').value);}
+function renderSiteTeams(){
+  const list=$('#siteTeam');list.replaceChildren();
+  for(const e of employees){
+    const row=document.createElement('label'),pick=document.createElement('select');row.className='field';
+    row.append(document.createTextNode(e.name+' '));
+    for(const name of siteNames)pick.add(new Option(name,name));
+    const previous=e.default_site||firstSite;pick.value=previous;row.append(pick);list.append(row);
+    pick.onchange=async()=>{
+      if(hasUnsavedDrafts()||bulkSaving){pick.value=previous;alert('บันทึกข้อมูลที่กรอกก่อนย้ายไซต์');return;}
+      pick.disabled=true;
+      try{await edge('action=assign-site',{method:'POST',body:JSON.stringify({employee_id:e.id,site:pick.value})});await loadDaily();}
+      catch(err){pick.value=previous;alert('ย้ายไซต์ไม่สำเร็จ');}finally{pick.disabled=false;}
+    };
+  }
+}
+function renderSiteInfo(){
+  const count=rs=>['work','off','leave'].map(k=>rs.filter(r=>r.status===k).length).join(' / ');
+  const rs=records.filter(r=>siteNames.includes(r.site));
+  $('#siteHint').textContent='บันทึกแล้ว (ทำงาน / หยุด / ลา) รวมทุกไซต์ '+count(rs)+' • '+siteNames.map(name=>name+': '+count(rs.filter(r=>r.site===name))).join(' • ');
+}
+async function readSites(){
+  const rows=(await edge('action=sites')).rows||[];
+  siteNames=rows.map(r=>r.name);
+  const select=$('#site'),wanted=shownSite||localStorage.getItem('sft.attendance.site');
+  select.replaceChildren(...siteNames.map(name=>new Option(name,name)));
+  select.value=siteNames.includes(wanted)?wanted:firstSite;shownSite=select.value;
+}
+const loadDailyBeforeSites=loadDaily;
+loadDaily=async function(){
+  if(bulkSaving||hasUnsavedDrafts())return;
+  try{await readSites();await loadDailyBeforeSites();shownDate=$('#workDate').value;renderSiteTeams();renderSiteInfo();}
+  catch(err){console.error(err);sync('โหลดรายชื่อไซต์ไม่สำเร็จ',false);}
+};
+$('#site').addEventListener('change',()=>{
+  if(bulkSaving||hasUnsavedDrafts()){$('#site').value=shownSite;alert('บันทึกข้อมูลที่กรอกก่อนเปลี่ยนไซต์');return;}
+  shownSite=$('#site').value;localStorage.setItem('sft.attendance.site',shownSite);renderDaily();renderSiteInfo();
+});
+$('#workDate').addEventListener('change',e=>{
+  if(hasUnsavedDrafts()){e.stopImmediatePropagation();e.target.value=shownDate;alert('บันทึกข้อมูลที่กรอกก่อนเปลี่ยนวันที่');}
+},true);
+$('#newSite').addEventListener('click',async()=>{
+  if(hasUnsavedDrafts()){alert('บันทึกข้อมูลที่กรอกก่อนเพิ่มไซต์');return;}
+  const name=prompt('ชื่อไซต์ใหม่')?.trim();if(!name)return;
+  try{await edge('action=add-site',{method:'POST',body:JSON.stringify({name})});shownSite=name;localStorage.setItem('sft.attendance.site',name);await loadDaily();}
+  catch(err){alert('เพิ่มไซต์ไม่สำเร็จ');}
+});
+$('#normalSite').addEventListener('click',()=>{
+  let n=0;
+  for(const el of $('#employeeList').querySelectorAll('.emp')){
+    const status=el.querySelector('.status');
+    if(status.value!=='pending'||el.querySelector('.save-state.dirty'))continue;
+    status.value='work';
+    for(const [sel,value] of [['.start','08:00'],['.morning-out','12:00'],['.afternoon-in','13:00'],['.end','17:00']])el.querySelector(sel).value=value;
+    status.dispatchEvent(new Event('change',{bubbles:true}));n++;
+  }
+  sync(n?'ใส่เวลาปกติ '+n+' คน • ตรวจแล้วกดบันทึกทั้งไซต์':'ไม่มีคนรอกรอกเวลาในไซต์นี้');
 });
 restoreLastWorkDate();
 loadDaily();
